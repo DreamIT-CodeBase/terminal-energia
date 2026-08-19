@@ -274,14 +274,14 @@ row is for, so `fuel_type` comes back as `Unknown`. The position of a code in
       "name": "Tartu Ringtee Neste",
       "latitude": 58.37529,
       "longitude": 26.67856,
-      "fuel_types": ["95", "98", "D", "MyD"],
+      "fuel_types": ["95", "98", "D", "MYD"],
       "note": null
     }
   ]
 }
 ```
 
-So at Tartu Ringtee Neste, row 1 is `95`, row 2 is `98`, row 4 is `MyD`.
+So at Tartu Ringtee Neste, row 1 is `95`, row 2 is `98`, row 4 is `MYD`.
 
 **Client notes**
 
@@ -301,7 +301,6 @@ So at Tartu Ringtee Neste, row 1 is `95`, row 2 is `98`, row 4 is `MyD`.
 | --- | --- |
 | `poltsamaa-jetoil`, `ahja-olerex` | Fuel sequence unknown, `fuel_types` is empty |
 | `valga-olerex` | Lists `DD`, kept verbatim. Probably a typo for `D`, but not corrected on a guess |
-| `tartu-ringtee-neste` / `peetri-neste` | Spell the same product `MyD` and `MYD` |
 | `puhu-risti-olerex` / `poltsamaa-olerex` | 1.3 m apart with identical sequences — likely the same forecourt under two names |
 | `puhu-risti-alexela` / `poltsamaa-alexela` | 1.1 m apart with identical sequences — likewise |
 | `tartu-kvissentali-circle-k` | Source latitude was `58,40682` (comma as decimal point); read as `58.40682` |
