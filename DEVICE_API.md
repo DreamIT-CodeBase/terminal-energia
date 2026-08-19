@@ -248,6 +248,65 @@ Then `GET <download_url>` for the bytes — no auth header, the SAS carries it.
 
 ---
 
+---
+
+## 5. `GET /v1/stations`
+
+The forecourt mapping: coordinates, and the order fuel types appear on each
+price board.
+
+This is what resolves a detected row back to a product. The detector reports a
+price per board row (`fuel_prices[].row_num`) but cannot read which fuel that
+row is for, so `fuel_type` comes back as `Unknown`. The position of a code in
+`fuel_types` is the row number, counting from the top.
+
+**Headers**: `Authorization: Bearer <token>`.
+
+**Response `200`**
+
+```json
+{
+  "version": 1,
+  "count": 41,
+  "stations": [
+    {
+      "id": "tartu-ringtee-neste",
+      "name": "Tartu Ringtee Neste",
+      "latitude": 58.37529,
+      "longitude": 26.67856,
+      "fuel_types": ["95", "98", "D", "MyD"],
+      "note": null
+    }
+  ]
+}
+```
+
+So at Tartu Ringtee Neste, row 1 is `95`, row 2 is `98`, row 4 is `MyD`.
+
+**Client notes**
+
+- **Never sort `fuel_types`.** The order is the board layout, not a
+  presentation choice — Räpina Olerex lists `98` before `95`.
+- An empty `fuel_types` means the sequence is not known for that station;
+  rows there cannot be resolved.
+- Match a run to a station by comparing `location.latitude` / `longitude` from
+  `api_response.json` against this list. Two pairs of entries sit within ~1 m
+  of each other (see below), so nearest-point matching alone will not pick
+  between them.
+- The list is small and changes rarely — fetch it once per session and cache.
+
+### Data caveats
+
+| Station | Issue |
+| --- | --- |
+| `poltsamaa-jetoil`, `ahja-olerex` | Fuel sequence unknown, `fuel_types` is empty |
+| `valga-olerex` | Lists `DD`, kept verbatim. Probably a typo for `D`, but not corrected on a guess |
+| `tartu-ringtee-neste` / `peetri-neste` | Spell the same product `MyD` and `MYD` |
+| `puhu-risti-olerex` / `poltsamaa-olerex` | 1.3 m apart with identical sequences — likely the same forecourt under two names |
+| `puhu-risti-alexela` / `poltsamaa-alexela` | 1.1 m apart with identical sequences — likewise |
+| `tartu-kvissentali-circle-k` | Source latitude was `58,40682` (comma as decimal point); read as `58.40682` |
+
+
 ## Retry semantics
 
 `DebugUploadWorker` already branches on retry-vs-drop, so the API means it:

@@ -248,3 +248,27 @@ class ModelDownloadResponse(BaseModel):
     size_bytes: int
     content_type: str
     expires_at: str
+
+
+# ============================================================
+# STATION MAPPING
+# ============================================================
+
+class Station(BaseModel):
+    id: str
+    name: str
+    latitude: float
+    longitude: float
+
+    # Top-to-bottom order of the rows on the price board, so the position in
+    # this list is the row number. Never sort it: Räpina Olerex lists 98
+    # before 95. Empty when the sequence is not known for that station.
+    fuel_types: list[str]
+
+    note: str | None = None
+
+
+class StationListResponse(BaseModel):
+    version: int
+    count: int
+    stations: list[Station]

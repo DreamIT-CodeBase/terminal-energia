@@ -42,12 +42,15 @@ from app.sas import (
 
 from app.schemas import (
     ArtifactUploadResponse,
+    StationListResponse,
     CompleteRunRequest,
     CompleteRunResponse,
     DeviceTokenRequest,
     DeviceTokenResponse,
     ModelDownloadResponse,
 )
+
+from app.stations import load_stations
 
 from app.storage import (
     is_safe_blob_path,
@@ -370,4 +373,35 @@ def get_model(
             else "application/octet-stream"
         ),
         expires_at=expires_at,
+    )
+
+
+# ============================================================
+# 5. STATION MAPPING
+# ============================================================
+
+@router.get(
+    "/stations",
+    response_model=StationListResponse,
+    summary="Forecourts, their coordinates and their board row order",
+    description=(
+        "The detector reports a price per board row but cannot read which "
+        "fuel that row is for, so `fuel_type` comes back as `Unknown`. This "
+        "mapping resolves it: the position of a code in `fuel_types` is the "
+        "row number, counting from the top. "
+        "The order is data, not presentation -- Rapina Olerex lists 98 "
+        "before 95, so the sequence must never be sorted. An empty "
+        "`fuel_types` means the sequence is not known for that station."
+    ),
+)
+def list_stations(
+    device_id: str = Depends(require_device),
+):
+
+    stations = load_stations()
+
+    return StationListResponse(
+        version=1,
+        count=len(stations),
+        stations=stations,
     )
