@@ -1,0 +1,19 @@
+fastapi==0.139.2
+uvicorn[standard]
+pydantic==2.*
+
+# Blob storage: the debug directory and annotated containers.
+azure-storage-blob
+
+# Fabric lakehouse: OneLake is an ADLS Gen2 (DFS) endpoint.
+azure-identity
+azure-storage-file-datalake
+
+# Multipart uploads for POST /files/upload.
+python-multipart
+
+# Cropping frames to their board boxes between labelling stages.
+Pillow
+
+# Short-lived device tokens for the /v1 API.
+PyJWT

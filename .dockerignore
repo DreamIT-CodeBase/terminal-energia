@@ -1,0 +1,15 @@
+# Secrets must never enter the build context: `az acr build` uploads the whole
+# directory to the registry.
+.env
+.env.*
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+.git/
+.gitignore
+deploy.sh
+README.md
