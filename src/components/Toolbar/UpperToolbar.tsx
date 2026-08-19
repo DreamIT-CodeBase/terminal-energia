@@ -1,0 +1,539 @@
+'use client';
+
+import React from 'react';
+
+import { useAnnotationStore } from '../../store/useAnnotationStore';
+import { signOutAction } from '../../app/actions';
+import { VideoSummary } from '../../types';
+
+import {
+  Undo2,
+  Redo2,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  RefreshCw,
+  Image as ImageIcon,
+  CheckCircle,
+  Tag,
+  LogOut,
+  Video
+} from 'lucide-react';
+
+
+interface UpperToolbarProps {
+  userEmail: string;
+  videos: VideoSummary[];
+  videoId: string | null;
+  onVideoChange: (videoId: string) => void;
+  onRefresh: () => void;
+}
+
+
+export const UpperToolbar: React.FC<UpperToolbarProps> = ({
+  userEmail,
+  videos,
+  videoId,
+  onVideoChange,
+  onRefresh
+}) => {
+
+  const {
+    history,
+    historyIndex,
+    canvasSettings,
+    images,
+    annotations,
+    undo,
+    redo,
+    updateCanvasSettings
+  } = useAnnotationStore();
+
+
+  // ============================================================
+  // ZOOM
+  // ============================================================
+
+  const handleZoomIn = () => {
+
+    updateCanvasSettings({
+      zoom: Math.min(
+        30,
+        canvasSettings.zoom * 1.2
+      )
+    });
+  };
+
+
+  const handleZoomOut = () => {
+
+    updateCanvasSettings({
+      zoom: Math.max(
+        0.05,
+        canvasSettings.zoom / 1.2
+      )
+    });
+  };
+
+
+  const handleFitImage = () => {
+
+    updateCanvasSettings({
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    });
+  };
+
+
+  // ============================================================
+  // COUNTS
+  // ============================================================
+
+  const annotatedImagesCount = images.filter(
+    image =>
+      annotations.some(
+        annotation => annotation.imageId === image.id
+      )
+  ).length;
+
+
+  // ============================================================
+  // UI
+  // ============================================================
+
+  return (
+
+    <header
+      className="
+        flex
+        items-center
+        justify-between
+        h-14
+        px-4
+        bg-[#141416]
+        border-b
+        border-[#232326]
+        select-none
+        text-zinc-300
+        font-sans
+      "
+    >
+
+      {/* ===================================================== */}
+      {/* LEFT: PROJECT AND VIDEO */}
+      {/* ===================================================== */}
+
+      <div
+        className="
+          flex
+          items-center
+          gap-3
+        "
+      >
+
+        <div
+          className="
+            flex
+            items-center
+            gap-2
+          "
+        >
+
+          <div
+            className="
+              flex
+              items-center
+              justify-center
+              w-7
+              h-7
+              rounded
+              bg-[#00bcd4]
+              font-bold
+              text-black
+              text-xs
+            "
+          >
+            FP
+          </div>
+
+          <span
+            className="
+              text-xs
+              font-black
+              tracking-widest
+              text-white
+              uppercase
+              hidden
+              lg:inline
+            "
+          >
+            Fuel Price Labelling
+          </span>
+
+        </div>
+
+
+        {/* VIDEO SELECTOR */}
+
+        <div
+          className="
+            flex
+            items-center
+            gap-2
+            border-l
+            border-zinc-800
+            pl-3
+          "
+        >
+
+          <Video
+            className="
+              w-3.5
+              h-3.5
+              text-zinc-500
+            "
+          />
+
+          <select
+            value={videoId ?? ''}
+            onChange={
+              event => onVideoChange(event.target.value)
+            }
+            disabled={videos.length === 0}
+            title="Video folder in the debug directory container"
+            className="
+              max-w-[220px]
+              bg-[#0d0d10]
+              border
+              border-[#232326]
+              text-xs
+              text-zinc-200
+              rounded
+              px-2
+              py-1.5
+              outline-none
+              focus:border-blue-500
+              disabled:opacity-40
+            "
+          >
+
+            {
+              videos.length === 0 && (
+                <option value="">
+                  No videos found
+                </option>
+              )
+            }
+
+            {
+              videos.map(video => (
+                <option
+                  key={video.videoId}
+                  value={video.videoId}
+                >
+                  {video.videoId}
+                  {`  ${video.imageCount} img`}
+                  {video.annotated ? '  (saved)' : ''}
+                </option>
+              ))
+            }
+
+          </select>
+
+
+          <button
+            onClick={onRefresh}
+            title="Reload videos from Azure"
+            className="
+              p-1.5
+              rounded
+              hover:bg-[#202024]
+              text-zinc-400
+              hover:text-zinc-200
+            "
+          >
+            <RefreshCw
+              className="
+                w-3.5
+                h-3.5
+              "
+            />
+          </button>
+
+        </div>
+
+
+        <div
+          className="
+            hidden
+            xl:flex
+            items-center
+            gap-2.5
+            ml-2
+            border-l
+            border-zinc-800
+            pl-4
+            text-xs
+            text-zinc-400
+          "
+        >
+
+          <span
+            className="
+              flex
+              items-center
+              gap-1
+            "
+          >
+            <ImageIcon
+              className="
+                w-3.5
+                h-3.5
+              "
+            />
+
+            {images.length} images
+          </span>
+
+
+          <span
+            className="
+              flex
+              items-center
+              gap-1
+            "
+          >
+            <Tag
+              className="
+                w-3.5
+                h-3.5
+              "
+            />
+
+            {annotations.length} objects
+          </span>
+
+
+          <span
+            className="
+              flex
+              items-center
+              gap-1
+            "
+          >
+            <CheckCircle
+              className="
+                w-3.5
+                h-3.5
+                text-green-500
+              "
+            />
+
+            {annotatedImagesCount}/{images.length} annotated
+          </span>
+
+        </div>
+
+      </div>
+
+
+      {/* ===================================================== */}
+      {/* MIDDLE: CANVAS CONTROLS */}
+      {/* ===================================================== */}
+
+      <div
+        className="
+          flex
+          items-center
+          gap-1
+        "
+      >
+
+        <button
+          onClick={undo}
+          disabled={historyIndex === 0}
+          title="Undo"
+          className="
+            p-2
+            rounded
+            hover:bg-[#202024]
+            disabled:opacity-40
+          "
+        >
+          <Undo2
+            className="
+              w-4.5
+              h-4.5
+            "
+          />
+        </button>
+
+
+        <button
+          onClick={redo}
+          disabled={historyIndex >= history.length - 1}
+          title="Redo"
+          className="
+            p-2
+            rounded
+            hover:bg-[#202024]
+            disabled:opacity-40
+          "
+        >
+          <Redo2
+            className="
+              w-4.5
+              h-4.5
+            "
+          />
+        </button>
+
+
+        <div
+          className="
+            w-px
+            h-5
+            bg-[#232326]
+            mx-2
+          "
+        />
+
+
+        <button
+          onClick={handleZoomOut}
+          title="Zoom Out"
+          className="
+            p-2
+            rounded
+            hover:bg-[#202024]
+          "
+        >
+          <ZoomOut
+            className="
+              w-4.5
+              h-4.5
+            "
+          />
+        </button>
+
+
+        <span
+          className="
+            text-xs
+            font-mono
+            w-12
+            text-center
+          "
+        >
+          {Math.round(canvasSettings.zoom * 100)}%
+        </span>
+
+
+        <button
+          onClick={handleZoomIn}
+          title="Zoom In"
+          className="
+            p-2
+            rounded
+            hover:bg-[#202024]
+          "
+        >
+          <ZoomIn
+            className="
+              w-4.5
+              h-4.5
+            "
+          />
+        </button>
+
+
+        <button
+          onClick={handleFitImage}
+          title="Fit Image"
+          className="
+            p-2
+            rounded
+            hover:bg-[#202024]
+          "
+        >
+          <Maximize
+            className="
+              w-4.5
+              h-4.5
+            "
+          />
+        </button>
+
+
+
+      </div>
+
+
+      {/* ===================================================== */}
+      {/* RIGHT: SAVE, EXPORT, ACCOUNT */}
+      {/* ===================================================== */}
+
+      <div
+        className="
+          flex
+          items-center
+          gap-2
+        "
+      >
+
+        {/* ACCOUNT */}
+
+        <div
+          className="
+            flex
+            items-center
+            gap-2
+            border-l
+            border-zinc-800
+            pl-2
+          "
+        >
+
+          <span
+            className="
+              hidden
+              xl:inline
+              text-[11px]
+              text-zinc-500
+              max-w-[180px]
+              truncate
+            "
+            title={userEmail}
+          >
+            {userEmail}
+          </span>
+
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              title="Sign out"
+              className="
+                p-2
+                rounded
+                hover:bg-[#202024]
+                text-zinc-400
+                hover:text-zinc-200
+              "
+            >
+              <LogOut
+                className="
+                  w-4
+                  h-4
+                "
+              />
+            </button>
+          </form>
+
+        </div>
+
+      </div>
+
+    </header>
+  );
+};

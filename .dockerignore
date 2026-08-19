@@ -1,0 +1,16 @@
+# Secrets must never enter the build context: `az acr build` uploads the whole
+# directory to the registry.
+.env
+.env.*
+!.env.example
+
+# Rebuilt inside the image; uploading them makes the context enormous.
+node_modules
+.next
+out
+
+.git
+.gitignore
+deploy.sh
+README.md
+npm-debug.log*
