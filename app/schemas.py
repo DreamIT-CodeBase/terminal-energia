@@ -167,6 +167,9 @@ class SubmitStageRequest(BaseModel):
 class SubmitStageResponse(BaseModel):
     video_id: str
     stage: str
+    # The ISO week the finished video was filed into, e.g. 2026-W34.
+    # Only set when the price-region pass completes.
+    week: str | None = None
     images_written: int
     # Board frames promoted from the working area when stage 2 completes.
     board_images_written: int = 0

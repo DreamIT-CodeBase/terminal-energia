@@ -15,8 +15,9 @@ from app.config import (
     ANNOTATIONS_FILE,
     API_RESPONSE_FILE,
     CLASSES_FILE,
+    ANNOTATIONS_DIR,
     IMAGE_FOLDERS,
-    STAGE_PRICE_REGION,
+    SNAPSHOTS_PREFIX,
     VIDEO_FILE,
     WORKING_PREFIX,
     get_annotated_container,
@@ -136,37 +137,46 @@ def list_videos() -> list[dict]:
 def list_annotated_state() -> tuple[set[str], set[str]]:
     """Which videos have been written to, and which are finished.
 
-    A video is finished once the price-region pass has been submitted, which
-    is the last step of the flow. Both sets come from one listing.
+    Finished videos are recorded as `snapshots/<week>/annotations/<id>.json`,
+    written only once both passes are done. Nothing else in the container is
+    keyed by video id, so for this layout the two sets are the same: a video is
+    either in a week or it is still work to do. Both are returned because the
+    API reports them separately.
+
+    Only the annotations directories are listed, not the images, so the cost
+    does not grow with the size of the datasets.
     """
 
     container = get_annotated_container()
 
-    annotated: set[str] = set()
     completed: set[str] = set()
 
     try:
-        for blob in container.list_blobs():
+        weeks = [
+            prefix.name
+            for prefix in container.walk_blobs(
+                name_starts_with=f"{SNAPSHOTS_PREFIX}/",
+                delimiter="/",
+            )
+        ]
 
-            head = blob.name.split("/", 1)[0]
+        for week_prefix in weeks:
 
-            if not head or head == WORKING_PREFIX:
-                # Half-finished work is parked under the working prefix and
-                # must not make a video look annotated.
-                continue
+            annotations_prefix = f"{week_prefix}{ANNOTATIONS_DIR}/"
 
-            annotated.add(head)
-
-            if blob.name == (
-                f"{head}/{STAGE_PRICE_REGION}/{ANNOTATIONS_FILE}"
+            for blob in container.list_blobs(
+                name_starts_with=annotations_prefix
             ):
-                completed.add(head)
+                name = blob.name[len(annotations_prefix):]
+
+                if name.endswith(".json") and "/" not in name:
+                    completed.add(name[:-len(".json")])
 
     except ResourceNotFoundError:
         # The annotated container has not been created yet.
         return set(), set()
 
-    return annotated, completed
+    return completed, completed
 
 
 # ============================================================

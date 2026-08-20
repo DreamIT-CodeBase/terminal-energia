@@ -30,15 +30,35 @@ video-id/video.mp4
 
 **Destination — `debugdirectoryannotated`** (written by this API)
 
+Finished work is grouped into the ISO week it was annotated in, so each week is
+a self-contained YOLO dataset:
+
 ```
-video-id/images/<folder>/<file>       copy of every annotated image
-video-id/labels/<folder>/<file>.txt   YOLO labels for that image
-video-id/classes.txt                  class names, one per line, index = YOLO class id
-video-id/annotations.json             full payload, used to reopen a video
+snapshots/2026-W34/
+  board/
+    images/<video-id>__<frame>.png
+    labels/<video-id>__<frame>.txt
+    data.yaml
+  price_region/
+    images/<video-id>__<crop>.png
+    labels/<video-id>__<crop>.txt
+    data.yaml
+  annotations/<video-id>.json
+
+_in_progress/<video-id>/          work that has not finished both passes
 ```
 
-`<folder>` is `frames`, `crops` or `prepped`, so images with the same file name
-in different source folders never collide.
+The two stages stay apart because they train two different single-class
+detectors on different images — full frames for boards, crops for price
+regions — so they cannot share one `data.yaml`.
+
+File names carry a `<video-id>__` prefix: a week pools many videos, and
+`frame_00000.png` is not unique across them.
+
+`annotations/<video-id>.json` is both the stored record of what was drawn and
+the marker that the video is finished. Nothing else in the container is keyed
+by video id, so "present in a snapshot" means "done", and the labelling queue
+is exactly the videos that are not.
 
 ## Labelling endpoints
 

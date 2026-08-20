@@ -83,6 +83,30 @@ WORKING_PREFIX = "_in_progress"
 
 BOARD_PAYLOAD_FILE = "board_annotations.json"
 
+
+# ============================================================
+# WEEKLY SNAPSHOTS
+#
+# Finished work is grouped by the ISO week it was annotated in,
+# so each week is a self-contained YOLO dataset:
+#
+#   snapshots/2026-W34/board/{images,labels}/ + data.yaml
+#   snapshots/2026-W34/price_region/{images,labels}/ + data.yaml
+#   snapshots/2026-W34/annotations/<video-id>.json
+#
+# Files carry a `<video-id>__` prefix because a week pools many
+# videos and frame_00000.png is not unique across them.
+# ============================================================
+
+SNAPSHOTS_PREFIX = "snapshots"
+
+ANNOTATIONS_DIR = "annotations"
+
+DATA_YAML_FILE = "data.yaml"
+
+# Separates the video id from the original file name.
+DATASET_NAME_SEPARATOR = "__"
+
 # YOLO class index per stage: each stage trains a single-class detector.
 STAGE_CLASS_NAMES = {
     STAGE_BOARD: ["board"],
