@@ -1,0 +1,231 @@
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+
+type: pipeline
+
+display_name: Board Detector Weekly Training
+experiment_name: board-detector-weekly
+
+description: >
+  Weekly retrain of the price-board detector. Takes one week's annotated
+  snapshot as a versioned data asset, continues training from the currently
+  registered model, compares the two on the same held-out split, and publishes
+  the winner to the model container the Android app downloads from.
+
+  The board detector runs on full camera frames, so it trains and exports at
+  960 -- the price-region detector works on already-cropped boards and uses
+  640.
+
+settings:
+  # Overridden by scripts/submit_pipeline.py from config/workspace.yml.
+  # Only edit this if you run `az ml job create -f` directly.
+  default_compute: azureml:REPLACE_ME_COMPUTE
+  continue_on_step_failure: false
+
+
+inputs:
+
+  # Versioned data asset for one ISO week, created by
+  # scripts/create_data_asset.py. `@latest` is the default so a manual
+  # `az ml job create` picks up the most recent week; submit_pipeline.py
+  # pins an explicit version instead, which is what you want for a
+  # reproducible run.
+  annotated_week:
+    type: uri_folder
+    path: azureml:board-annotated-week@latest
+    mode: ro_mount
+
+  # Cold-start default. submit_pipeline.py replaces this with the latest
+  # registered board-detector version once one exists.
+  previous_model:
+    type: uri_folder
+    path: azureml://datastores/REPLACE_ME_MODEL_DATASTORE/paths/base/
+    mode: ro_mount
+
+  previous_model_version: ""
+
+  # Exact filename inside previous_model. submit_pipeline.py sets it to the
+  # stage's base .pt on a cold start, because base_models/ holds both
+  # detectors and picking by glob would start this run from the other one.
+  weights_name: ""
+
+  has_previous: "false"
+
+  week: ""
+
+  # --- dataset preparation ---
+  class_name: "board"
+  imgsz: 960
+  # 0.0 = hold nothing back; every annotated image trains. Validation will
+  # come from a separate datastore, not carved out of the week. Until that
+  # exists, data.yaml points `val` at the train images (Ultralytics needs a
+  # val target) and the promotion comparison is NOT evidence of
+  # generalisation -- evaluate.py says so loudly and stamps decision.json.
+  val_split: 0.0
+  seed: 42
+  augment: "true"
+  per_image: 6
+
+  # The board detector trains in COLOUR. It sees full camera frames, where
+  # forecourt branding is strongly coloured, and the device does not
+  # grayscale a frame before running board detection. Only the price-region
+  # detector normalises to grayscale.
+  grayscale_prob: 0.0
+  grayscale_originals: "false"
+
+  # --- training ---
+  epochs: 50
+  batch: 16
+  # -1 = resolve at runtime from the compute's core count. The pipeline YAML
+  # cannot know that number, and one tuned for a 16-core box would thrash a
+  # 4-vCPU one. See resolve_workers() in src/train.py.
+  workers: -1
+  patience: 0
+  device: "cpu"
+
+  # --- promotion ---
+  metric: "mAP50-95"
+  margin: 0.005
+
+  # --- publication ---
+  stage: "board"
+  model_name: "board-detector"
+  model_root: "detectors"
+  int8: "true"
+  register: "true"
+
+
+outputs:
+
+  # Bound to the YOLO model container the device API serves. Overridden by
+  # submit_pipeline.py from config/workspace.yml.
+  published_model:
+    type: uri_folder
+    path: azureml://datastores/REPLACE_ME_MODEL_DATASTORE/paths/
+    mode: rw_mount
+
+
+jobs:
+
+  # =========================================================
+  # STEP 1: SPLIT AND AUGMENT THIS WEEK'S SNAPSHOT
+  # =========================================================
+  prepare_data:
+    type: command
+    component: ../components/prepare_data.yml
+
+    inputs:
+      annotated_week: ${{parent.inputs.annotated_week}}
+      class_name: ${{parent.inputs.class_name}}
+      imgsz: ${{parent.inputs.imgsz}}
+      val_split: ${{parent.inputs.val_split}}
+      seed: ${{parent.inputs.seed}}
+      augment: ${{parent.inputs.augment}}
+      per_image: ${{parent.inputs.per_image}}
+      grayscale_prob: ${{parent.inputs.grayscale_prob}}
+      grayscale_originals: ${{parent.inputs.grayscale_originals}}
+
+    outputs:
+      prepared_dataset:
+        type: uri_folder
+        mode: rw_mount
+
+
+  # =========================================================
+  # STEP 2: CONTINUE TRAINING THE DEPLOYED MODEL
+  # =========================================================
+  train:
+    type: command
+    component: ../components/train.yml
+
+    inputs:
+      prepared_dataset: ${{parent.jobs.prepare_data.outputs.prepared_dataset}}
+      previous_model: ${{parent.inputs.previous_model}}
+      previous_model_version: ${{parent.inputs.previous_model_version}}
+      weights_name: ${{parent.inputs.weights_name}}
+      stage: ${{parent.inputs.stage}}
+      week: ${{parent.inputs.week}}
+      epochs: ${{parent.inputs.epochs}}
+      imgsz: ${{parent.inputs.imgsz}}
+      batch: ${{parent.inputs.batch}}
+      workers: ${{parent.inputs.workers}}
+      seed: ${{parent.inputs.seed}}
+      patience: ${{parent.inputs.patience}}
+      device: ${{parent.inputs.device}}
+
+    outputs:
+      trained_model:
+        type: uri_folder
+        mode: rw_mount
+
+
+  # =========================================================
+  # STEP 3: COMPARE, ON THE SAME HELD-OUT SPLIT
+  # =========================================================
+  evaluate:
+    type: command
+    component: ../components/evaluate.yml
+
+    inputs:
+      prepared_dataset: ${{parent.jobs.prepare_data.outputs.prepared_dataset}}
+      previous_model: ${{parent.inputs.previous_model}}
+      trained_model: ${{parent.jobs.train.outputs.trained_model}}
+      weights_name: ${{parent.inputs.weights_name}}
+      stage: ${{parent.inputs.stage}}
+      week: ${{parent.inputs.week}}
+      has_previous: ${{parent.inputs.has_previous}}
+      metric: ${{parent.inputs.metric}}
+      margin: ${{parent.inputs.margin}}
+      imgsz: ${{parent.inputs.imgsz}}
+      device: ${{parent.inputs.device}}
+
+    outputs:
+      evaluation:
+        type: uri_folder
+        mode: rw_mount
+
+
+  # =========================================================
+  # STEP 4: COMPILE FOR ANDROID (skipped unless promoted)
+  # =========================================================
+  export_tflite:
+    type: command
+    component: ../components/export_tflite.yml
+
+    inputs:
+      trained_model: ${{parent.jobs.train.outputs.trained_model}}
+      evaluation: ${{parent.jobs.evaluate.outputs.evaluation}}
+      prepared_dataset: ${{parent.jobs.prepare_data.outputs.prepared_dataset}}
+      imgsz: ${{parent.inputs.imgsz}}
+      int8: ${{parent.inputs.int8}}
+
+    outputs:
+      tflite_model:
+        type: uri_folder
+        mode: rw_mount
+
+
+  # =========================================================
+  # STEP 5: PUBLISH TO THE MODEL CONTAINER AND REGISTRY
+  # =========================================================
+  publish_model:
+    type: command
+    component: ../components/publish_model.yml
+
+    inputs:
+      trained_model: ${{parent.jobs.train.outputs.trained_model}}
+      tflite_model: ${{parent.jobs.export_tflite.outputs.tflite_model}}
+      evaluation: ${{parent.jobs.evaluate.outputs.evaluation}}
+      stage: ${{parent.inputs.stage}}
+      model_name: ${{parent.inputs.model_name}}
+      model_root: ${{parent.inputs.model_root}}
+      week: ${{parent.inputs.week}}
+      class_name: ${{parent.inputs.class_name}}
+      imgsz: ${{parent.inputs.imgsz}}
+      register: ${{parent.inputs.register}}
+
+    outputs:
+      published_model: ${{parent.outputs.published_model}}
+
+      publish_record:
+        type: uri_folder
+        mode: rw_mount

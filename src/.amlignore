@@ -1,0 +1,16 @@
+# Applies to the component code snapshot, whose root is this folder.
+#
+# The repo-root .amlignore does NOT cover this: the components declare
+# `code: ../src`, so Azure ML treats src/ as the snapshot root and looks for
+# an ignore file here. Without this, locally-compiled bytecode for whatever
+# Python happens to be on the submitting machine ships with every step.
+__pycache__/
+*.pyc
+*.pyo
+
+# Never ship weights or datasets in the code snapshot -- they arrive as
+# mounted inputs.
+*.pt
+*.onnx
+*.tflite
+runs/

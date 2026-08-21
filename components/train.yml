@@ -1,0 +1,98 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+name: yolo_train
+display_name: Fine-tune YOLO Detector
+version: 1
+
+type: command
+
+description: >
+  Continue training the currently deployed detector on this week's prepared
+  dataset. Hyperparameters, per-epoch metrics and the run folder are logged to
+  the step's MLflow run.
+
+inputs:
+
+  prepared_dataset:
+    type: uri_folder
+
+  previous_model:
+    type: uri_folder
+    description: >
+      Weights to continue from -- a registered model version, or the staged
+      base weights on the first run for a stage.
+
+  previous_model_version:
+    type: string
+    default: ""
+    description: Registered version the weights came from. Empty means cold start.
+
+  weights_name:
+    type: string
+    default: ""
+    description: >
+      Exact .pt filename inside previous_model. Required when that folder
+      holds weights for more than one model.
+
+  stage:
+    type: string
+
+  week:
+    type: string
+    default: ""
+
+  epochs:
+    type: integer
+    default: 50
+
+  imgsz:
+    type: integer
+    default: 640
+
+  batch:
+    type: integer
+    default: 16
+
+  workers:
+    type: integer
+    default: -1
+    description: Dataloader processes. -1 resolves from the compute's core count.
+
+  seed:
+    type: integer
+    default: 42
+
+  patience:
+    type: integer
+    default: 0
+    description: Ultralytics early stopping. 0 disables it.
+
+  device:
+    type: string
+    default: "auto"
+
+outputs:
+
+  trained_model:
+    type: uri_folder
+
+code: ../src
+
+environment: azureml:yolo-pipeline-env@latest
+
+command: >-
+  python train.py
+  --prepared_dataset "${{inputs.prepared_dataset}}"
+  --previous_model "${{inputs.previous_model}}"
+  --previous_model_version "${{inputs.previous_model_version}}"
+  --trained_model "${{outputs.trained_model}}"
+  --weights_name "${{inputs.weights_name}}"
+  --stage "${{inputs.stage}}"
+  --week "${{inputs.week}}"
+  --epochs ${{inputs.epochs}}
+  --imgsz ${{inputs.imgsz}}
+  --batch ${{inputs.batch}}
+  --workers ${{inputs.workers}}
+  --seed ${{inputs.seed}}
+  --patience ${{inputs.patience}}
+  --device ${{inputs.device}}

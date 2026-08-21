@@ -1,0 +1,50 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+name: yolo_export_tflite
+display_name: Export Promoted Model to int8 TFLite
+version: 1
+
+type: command
+
+description: >
+  Compile the promoted model to the int8 TFLite package the Android app
+  loads, calibrating quantisation on this week's dataset. A no-op when the
+  deployed model won the comparison.
+
+inputs:
+
+  trained_model:
+    type: uri_folder
+
+  evaluation:
+    type: uri_folder
+
+  prepared_dataset:
+    type: uri_folder
+    description: Used as the int8 calibration set, not for training.
+
+  imgsz:
+    type: integer
+    default: 640
+
+  int8:
+    type: string
+    default: "true"
+
+outputs:
+
+  tflite_model:
+    type: uri_folder
+
+code: ../src
+
+environment: azureml:yolo-pipeline-env@latest
+
+command: >-
+  python export_tflite.py
+  --trained_model "${{inputs.trained_model}}"
+  --evaluation "${{inputs.evaluation}}"
+  --prepared_dataset "${{inputs.prepared_dataset}}"
+  --tflite_model "${{outputs.tflite_model}}"
+  --imgsz ${{inputs.imgsz}}
+  --int8 ${{inputs.int8}}

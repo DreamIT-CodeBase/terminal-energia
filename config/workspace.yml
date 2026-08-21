@@ -1,0 +1,78 @@
+# ============================================================
+# THE ONLY FILE YOU HAVE TO EDIT
+#
+# Everything the Python scripts under scripts/ need to reach
+# your Azure ML workspace. The scripts override the pipeline
+# YAML defaults with these values at submit time, so you do
+# not have to keep the two in sync.
+#
+# The pipeline YAMLs under pipelines/ carry their own copies
+# of `compute` and the datastore names as defaults, and those
+# only matter if you bypass submit_pipeline.py and run
+# `az ml job create -f ...` directly.
+# ============================================================
+
+azure:
+  subscription_id: "6d3225f9-c62a-41f7-85bc-74b35523dc27"   # AzureSponsorship_forAI
+  resource_group: "terminal-scout"                          # uksouth
+  workspace_name: "mltraining"                              # created 2026-08-20
+
+# The single compute instance both pipelines run on.
+# ComputeInstance, Standard_E4ds_v4 -- 4 vCPU / 32 GiB. Must be Running
+# before a job is submitted; a stopped instance leaves the job queued.
+compute: "terminal-scout-train"
+
+# Registered environment, created by scripts/create_environment.py.
+# `@latest` means you never have to bump this after a rebuild.
+environment: "yolo-pipeline-env@latest"
+
+datastores:
+  # Points at the annotated blob container the labelling system
+  # writes to (`debugdirectoryannotated`). Read-only in these
+  # pipelines -- the snapshots/<week>/<stage>/ folders are the
+  # source of every data asset.
+  annotated: "debugdirectoryannotated"   # -> memoryterminalscout/debugdirectoryannotated
+
+  # Points at the YOLO model container the device API serves
+  # (`yolo` -- see MODEL_CONTAINERS in system-api/app/config.py).
+  # The promoted .pt and .tflite are written here.
+  models: "yolo"                         # -> memoryterminalscout/yolo
+
+# Root prefix inside the model container. A published model ends up at
+#   <models datastore>/<model_root>/<stage>/latest_int8.tflite
+# which the app requests as
+#   GET /v1/models/yolo/<model_root>/<stage>/latest_int8.tflite
+model_root: "detectors"
+
+# Folder in the model container holding the starting weights for a stage's
+# first run. These are the .pt behind the currently deployed .tflite models,
+# so run one is a genuine continuation of what the fleet is running -- not a
+# restart from COCO.
+#
+# Both detectors live in this one folder, so the exact filename is named
+# per stage below and passed through as `weights_name`. Picking by glob would
+# start the price-region run from the board weights.
+base_weights_folder: "base_models"
+
+
+# ============================================================
+# PER-STAGE NAMES
+#
+# `stage` matches the folder names the labelling system writes
+# inside snapshots/<week>/ -- see STAGES in
+# system-api/app/config.py. Do not rename these.
+# ============================================================
+
+stages:
+
+  board:
+    data_asset: "board-annotated-week"
+    model_name: "board-detector"
+    pipeline: "pipelines/board_pipeline.yml"
+    base_weights: "board-detection-base.pt"
+
+  price_region:
+    data_asset: "price-region-annotated-week"
+    model_name: "price-region-detector"
+    pipeline: "pipelines/price_region_pipeline.yml"
+    base_weights: "price-region-base.pt"

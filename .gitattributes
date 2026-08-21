@@ -1,0 +1,13 @@
+# Normalise line endings on checkin.
+* text=auto
+
+# Shell scripts MUST stay LF. A CRLF deploy.sh fails on Linux/WSL/CI with
+# "bad interpreter: /usr/bin/env bash^M", which is an obscure way to lose an
+# afternoon.
+*.sh text eol=lf
+
+# Ultralytics and Azure ML read these directly; keep them LF for the same
+# reason the container that consumes them is Linux.
+*.yml text eol=lf
+*.yaml text eol=lf
+.amlignore text eol=lf

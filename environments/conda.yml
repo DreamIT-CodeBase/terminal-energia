@@ -1,0 +1,62 @@
+# ============================================================
+# ONE ENVIRONMENT FOR EVERY STEP OF BOTH PIPELINES
+#
+# CPU-only. Two consequences worth knowing:
+#
+#  1. torch is pinned to the `+cpu` wheels from the PyTorch CPU
+#     index. Left to plain `pip install ultralytics`, pip pulls
+#     the default CUDA build and about 2.5 GB of nvidia-* wheels
+#     that can never be used here -- a much slower image build
+#     and a much slower container start, for nothing.
+#
+#  2. Training (torch) and int8 TFLite export (tensorflow) share
+#     this image, so the numpy bound below is load-bearing: TF
+#     and onnx2tf constrain it from above, torch from below.
+#     If this image ever stops resolving, the cheapest fix is to
+#     give components/export_tflite.yml its own environment.
+# ============================================================
+
+name: yolo-pipeline-env
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.10
+  - pip
+
+  - pip:
+
+      # CPU wheels. The `+cpu` local version is what forces pip off
+      # the CUDA build -- an --extra-index-url alone would not.
+      - --extra-index-url https://download.pytorch.org/whl/cpu
+      - torch==2.5.1+cpu
+      - torchvision==0.20.1+cpu
+
+      # --- training + dataset prep ---
+      - ultralytics==8.3.*
+      - albumentations>=2.0,<3.0     # 2.x API: std_range, scale_range, seed=
+      - opencv-python-headless
+      - numpy>=1.26,<2.2
+      - scipy
+      - pillow
+      - pyyaml
+      - tqdm
+
+      # --- tracking + workspace access from inside a job ---
+      - mlflow
+      - azureml-mlflow
+      - azure-ai-ml
+      - azure-identity
+      - azure-storage-blob
+
+      # --- int8 TFLite export chain ---
+      # ultralytics shells out to onnx2tf, which needs all of these.
+      - tensorflow-cpu==2.18.*
+      - onnx==1.17.*
+      - onnxslim
+      - onnxruntime
+      - onnx2tf>=1.26,<2.0
+      - onnx_graphsurgeon
+      - sng4onnx
+      - tflite_support

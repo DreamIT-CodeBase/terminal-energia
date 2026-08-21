@@ -1,0 +1,80 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+name: yolo_publish_model
+display_name: Publish and Register Promoted Model
+version: 1
+
+type: command
+
+description: >
+  Write the promoted .pt and .tflite into the model container the device API
+  serves, alongside a latest.json manifest, and register the model as a new
+  version in the workspace registry. A no-op when the deployed model won.
+
+inputs:
+
+  trained_model:
+    type: uri_folder
+
+  tflite_model:
+    type: uri_folder
+
+  evaluation:
+    type: uri_folder
+
+  stage:
+    type: string
+
+  model_name:
+    type: string
+    description: Registry name, e.g. price-region-detector.
+
+  model_root:
+    type: string
+    default: "detectors"
+    description: Prefix inside the model container.
+
+  week:
+    type: string
+    default: ""
+    description: Used as the immutable versions/<week>/ folder name.
+
+  class_name:
+    type: string
+    default: ""
+
+  imgsz:
+    type: integer
+    default: 640
+
+  register:
+    type: string
+    default: "true"
+
+outputs:
+
+  published_model:
+    type: uri_folder
+    description: Bound to the model container the Android app downloads from.
+
+  publish_record:
+    type: uri_folder
+
+code: ../src
+
+environment: azureml:yolo-pipeline-env@latest
+
+command: >-
+  python publish_model.py
+  --trained_model "${{inputs.trained_model}}"
+  --tflite_model "${{inputs.tflite_model}}"
+  --evaluation "${{inputs.evaluation}}"
+  --published_model "${{outputs.published_model}}"
+  --publish_record "${{outputs.publish_record}}"
+  --stage "${{inputs.stage}}"
+  --model_name "${{inputs.model_name}}"
+  --model_root "${{inputs.model_root}}"
+  --week "${{inputs.week}}"
+  --class_name "${{inputs.class_name}}"
+  --imgsz ${{inputs.imgsz}}
+  --register ${{inputs.register}}

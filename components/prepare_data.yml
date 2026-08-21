@@ -1,0 +1,77 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+name: yolo_prepare_data
+display_name: Prepare Weekly YOLO Dataset
+version: 1
+
+type: command
+
+description: >
+  Split one week's annotated snapshot into train/val, letterbox every image
+  onto a square grey canvas, and generate offline augmented variants of the
+  train split. The snapshot's own data.yaml points train and val at the same
+  images, so the split has to be made here.
+
+inputs:
+
+  annotated_week:
+    type: uri_folder
+    description: One week's snapshot for one stage; contains images/ and labels/.
+
+  class_name:
+    type: string
+    description: Single class name written into data.yaml.
+
+  imgsz:
+    type: integer
+    default: 640
+
+  val_split:
+    type: number
+    default: 0.0
+    description: >
+      Fraction of originals held out for validation. 0.0 holds nothing back
+      and points data.yaml's `val` at the train images.
+
+  seed:
+    type: integer
+    default: 42
+
+  augment:
+    type: string
+    default: "true"
+
+  per_image:
+    type: integer
+    default: 6
+    description: Augmented variants generated per labelled train image.
+
+  grayscale_prob:
+    type: number
+    default: 1.0
+
+  grayscale_originals:
+    type: string
+    default: "true"
+
+outputs:
+
+  prepared_dataset:
+    type: uri_folder
+
+code: ../src
+
+environment: azureml:yolo-pipeline-env@latest
+
+command: >-
+  python prepare_data.py
+  --annotated_week "${{inputs.annotated_week}}"
+  --prepared_dataset "${{outputs.prepared_dataset}}"
+  --class_name "${{inputs.class_name}}"
+  --imgsz ${{inputs.imgsz}}
+  --val_split ${{inputs.val_split}}
+  --seed ${{inputs.seed}}
+  --augment ${{inputs.augment}}
+  --per_image ${{inputs.per_image}}
+  --grayscale_prob ${{inputs.grayscale_prob}}
+  --grayscale_originals ${{inputs.grayscale_originals}}

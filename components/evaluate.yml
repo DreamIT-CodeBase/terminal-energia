@@ -1,0 +1,85 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+
+name: yolo_evaluate
+display_name: Compare New and Deployed Models
+version: 1
+
+type: command
+
+description: >
+  Validate the deployed model and the newly trained model on the same
+  held-out split, and decide whether the new one replaces it. Writes
+  decision.json, which every later step reads.
+
+inputs:
+
+  prepared_dataset:
+    type: uri_folder
+
+  previous_model:
+    type: uri_folder
+
+  trained_model:
+    type: uri_folder
+
+  weights_name:
+    type: string
+    default: ""
+    description: >
+      Exact .pt filename inside previous_model. Required when that folder
+      holds weights for more than one model.
+
+  stage:
+    type: string
+
+  week:
+    type: string
+    default: ""
+
+  has_previous:
+    type: string
+    default: "false"
+    description: >
+      False means previous_model is the cold-start base weights rather than a
+      registered model, which forces promotion.
+
+  metric:
+    type: string
+    default: "mAP50-95"
+
+  margin:
+    type: number
+    default: 0.005
+    description: How much the new model must win by to be promoted.
+
+  imgsz:
+    type: integer
+    default: 640
+
+  device:
+    type: string
+    default: "auto"
+
+outputs:
+
+  evaluation:
+    type: uri_folder
+
+code: ../src
+
+environment: azureml:yolo-pipeline-env@latest
+
+command: >-
+  python evaluate.py
+  --prepared_dataset "${{inputs.prepared_dataset}}"
+  --previous_model "${{inputs.previous_model}}"
+  --trained_model "${{inputs.trained_model}}"
+  --evaluation "${{outputs.evaluation}}"
+  --weights_name "${{inputs.weights_name}}"
+  --stage "${{inputs.stage}}"
+  --week "${{inputs.week}}"
+  --has_previous ${{inputs.has_previous}}
+  --metric "${{inputs.metric}}"
+  --margin ${{inputs.margin}}
+  --imgsz ${{inputs.imgsz}}
+  --device ${{inputs.device}}

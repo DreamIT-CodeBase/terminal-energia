@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Model weights and exports never belong in the repo -- they live in the
+# model container and the Azure ML registry, and they are large binaries.
+*.pt
+*.onnx
+*.tflite
+*_saved_model/
+
+# Ultralytics scratch output
+runs/
+
+# Local cache for scripts/stage_base_weights.py
+scripts/.cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
