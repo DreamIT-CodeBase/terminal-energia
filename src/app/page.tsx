@@ -7,6 +7,7 @@ import {
 } from '@/auth';
 
 import { SignInButton } from '@/components/Auth/SignInButton';
+import { AUTH_DISABLED } from '@/lib/flags';
 
 
 // ============================================================
@@ -21,6 +22,11 @@ export default async function Home(
     searchParams: Promise<{ error?: string }>;
   }
 ) {
+
+  // Nothing to sign in to while sign-in is off.
+  if (AUTH_DISABLED) {
+    redirect('/annotation');
+  }
 
   const session = await auth();
 

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { auth } from '@/auth';
+import { ANONYMOUS_TESTER, AUTH_DISABLED } from '@/lib/flags';
 
 
 /**
@@ -51,6 +52,12 @@ const buildHeaders = (
  * Returns the signed-in address so it can be recorded with saved annotations.
  */
 export const requireUserEmail = async (): Promise<string> => {
+
+  // Sign-in is off for testing, so there is no session to read. Saved work is
+  // attributed to the tester placeholder rather than a real account.
+  if (AUTH_DISABLED) {
+    return ANONYMOUS_TESTER;
+  }
 
   const session = await auth();
 

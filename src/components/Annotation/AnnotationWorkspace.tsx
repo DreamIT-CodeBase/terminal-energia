@@ -37,6 +37,10 @@ import {
 
 interface AnnotationWorkspaceProps {
   userEmail: string;
+  // Sign-in is temporarily off, so the tool is open to anyone with the URL.
+  authDisabled?: boolean;
+  // Offer every video, not just the ones still to do.
+  showAllVideos?: boolean;
 }
 
 
@@ -79,7 +83,9 @@ const imageIdFor = (
 
 
 export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
-  userEmail
+  userEmail,
+  authDisabled = false,
+  showAllVideos = false
 }) => {
 
   const {
@@ -390,10 +396,11 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
             imageCount: item.image_count ?? 0,
             completed: item.completed ?? false
           }))
-          // The queue is work still to do: anything already written to the
-          // annotated container drops out. `annotated` covers both a finished
-          // video and one whose board pass was submitted earlier.
-          .filter(video => !video.annotated);
+          // The queue is normally work still to do, so anything already
+          // written to the annotated container drops out. While
+          // showAllVideos is set every video stays on offer, and an annotated
+          // one can be labelled again -- the dropdown marks those "(saved)".
+          .filter(video => showAllVideos || !video.annotated);
 
         setVideos(summaries);
 
@@ -680,6 +687,8 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
       <UpperToolbar
         userEmail={userEmail}
+        authDisabled={authDisabled}
+        showAllVideos={showAllVideos}
         videos={videos}
         videoId={videoId}
         onVideoChange={loadVideo}

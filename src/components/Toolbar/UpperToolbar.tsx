@@ -17,12 +17,16 @@ import {
   CheckCircle,
   Tag,
   LogOut,
+  ShieldAlert,
   Video
 } from 'lucide-react';
 
 
 interface UpperToolbarProps {
   userEmail: string;
+  authDisabled?: boolean;
+  // Annotated videos are on offer too, so they can be redone.
+  showAllVideos?: boolean;
   videos: VideoSummary[];
   videoId: string | null;
   onVideoChange: (videoId: string) => void;
@@ -32,6 +36,8 @@ interface UpperToolbarProps {
 
 export const UpperToolbar: React.FC<UpperToolbarProps> = ({
   userEmail,
+  authDisabled = false,
+  showAllVideos = false,
   videos,
   videoId,
   onVideoChange,
@@ -240,6 +246,36 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
             }
 
           </select>
+
+
+          {
+            showAllVideos && (
+              <span
+                title={
+                  'Showing every video, including ones already annotated. ' +
+                  'Those are marked "(saved)" in the list, and labelling one ' +
+                  'again overwrites what was saved for it.'
+                }
+                className="
+                  shrink-0
+                  px-2
+                  py-1
+                  rounded
+                  border
+                  border-amber-500/40
+                  bg-amber-500/10
+                  text-[10px]
+                  font-semibold
+                  uppercase
+                  tracking-wider
+                  text-amber-300
+                  cursor-help
+                "
+              >
+                All
+              </span>
+            )
+          }
 
 
           <button
@@ -495,40 +531,76 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
           "
         >
 
-          <span
-            className="
-              hidden
-              xl:inline
-              text-[11px]
-              text-zinc-500
-              max-w-[180px]
-              truncate
-            "
-            title={userEmail}
-          >
-            {userEmail}
-          </span>
+          {
+            authDisabled
+              ? (
+                // Deliberately loud: while this shows, anyone with the URL can
+                // annotate, and saved work is attributed to a placeholder.
+                <span
+                  title="Microsoft sign-in is turned off for testing. Anyone with this link can annotate."
+                  className="
+                    flex
+                    items-center
+                    gap-1.5
+                    px-2.5
+                    py-1
+                    rounded
+                    border
+                    border-amber-500/40
+                    bg-amber-500/10
+                    text-[11px]
+                    font-semibold
+                    text-amber-300
+                  "
+                >
+                  <ShieldAlert
+                    className="
+                      w-3.5
+                      h-3.5
+                    "
+                  />
+                  Sign-in off
+                </span>
+              )
+              : (
+                <>
+                  <span
+                    className="
+                      hidden
+                      xl:inline
+                      text-[11px]
+                      text-zinc-500
+                      max-w-[180px]
+                      truncate
+                    "
+                    title={userEmail}
+                  >
+                    {userEmail}
+                  </span>
 
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              title="Sign out"
-              className="
-                p-2
-                rounded
-                hover:bg-[#202024]
-                text-zinc-400
-                hover:text-zinc-200
-              "
-            >
-              <LogOut
-                className="
-                  w-4
-                  h-4
-                "
-              />
-            </button>
-          </form>
+                  <form action={signOutAction}>
+                    <button
+                      type="submit"
+                      title="Sign out"
+                      className="
+                        p-2
+                        rounded
+                        hover:bg-[#202024]
+                        text-zinc-400
+                        hover:text-zinc-200
+                      "
+                    >
+                      <LogOut
+                        className="
+                          w-4
+                          h-4
+                        "
+                      />
+                    </button>
+                  </form>
+                </>
+              )
+          }
 
         </div>
 

@@ -127,6 +127,8 @@ ENTRA_ISSUER="$(env_value AUTH_MICROSOFT_ENTRA_ID_ISSUER)"
 ALLOWED_EMAIL="$(env_value ALLOWED_EMAIL)"
 SYSTEM_API_URL="$(env_value SYSTEM_API_URL)"
 SYSTEM_API_KEY="$(env_value SYSTEM_API_KEY)"
+AUTH_DISABLED="$(env_value AUTH_DISABLED)"
+SHOW_ALL_VIDEOS="$(env_value SHOW_ALL_VIDEOS)"
 
 for pair in \
   "AUTH_SECRET:$AUTH_SECRET" \
@@ -151,7 +153,22 @@ done
 
 ALLOWED_EMAIL="${ALLOWED_EMAIL:-chirag@dreamitcs.com}"
 
+# Anything other than an explicit "true" leaves sign-in enforced.
+if [ "$AUTH_DISABLED" = "true" ]; then
+  printf '
+[1;33m  WARNING: AUTH_DISABLED=true -- deploying with sign-in OFF.[0m
+'
+  printf '  Anyone with the URL will be able to browse and annotate.
+'
+else
+  AUTH_DISABLED="false"
+fi
+
 info "Allowed account: ${ALLOWED_EMAIL}"
+[ "$SHOW_ALL_VIDEOS" = "true" ] || SHOW_ALL_VIDEOS="false"
+
+info "Sign-in:         $([ "$AUTH_DISABLED" = "true" ] && echo "DISABLED (testing)" || echo "enforced")"
+info "Video queue:     $([ "$SHOW_ALL_VIDEOS" = "true" ] && echo "all videos, including annotated" || echo "unannotated only")"
 info "System API:      ${SYSTEM_API_URL}"
 
 
@@ -411,6 +428,8 @@ az containerapp update \
     "AUTH_URL=${BASE_URL}" \
     "AUTH_TRUST_HOST=true" \
     "NODE_ENV=production" \
+    "AUTH_DISABLED=${AUTH_DISABLED}" \
+    "SHOW_ALL_VIDEOS=${SHOW_ALL_VIDEOS}" \
   --min-replicas 0 \
   --max-replicas 1 \
   --only-show-errors >/dev/null

@@ -6,6 +6,11 @@ import {
 } from '@/auth';
 
 import { AnnotationWorkspace } from '@/components/Annotation/AnnotationWorkspace';
+import {
+  ANONYMOUS_TESTER,
+  AUTH_DISABLED,
+  SHOW_ALL_VIDEOS
+} from '@/lib/flags';
 
 
 // ============================================================
@@ -18,6 +23,16 @@ import { AnnotationWorkspace } from '@/components/Annotation/AnnotationWorkspace
 
 export default async function AnnotationPage() {
 
+  if (AUTH_DISABLED) {
+    return (
+      <AnnotationWorkspace
+        userEmail={ANONYMOUS_TESTER}
+        authDisabled
+        showAllVideos={SHOW_ALL_VIDEOS}
+      />
+    );
+  }
+
   const session = await auth();
 
   const email = session?.user?.email?.toLowerCase();
@@ -27,6 +42,9 @@ export default async function AnnotationPage() {
   }
 
   return (
-    <AnnotationWorkspace userEmail={email} />
+    <AnnotationWorkspace
+      userEmail={email}
+      showAllVideos={SHOW_ALL_VIDEOS}
+    />
   );
 }
