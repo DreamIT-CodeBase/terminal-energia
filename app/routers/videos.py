@@ -68,6 +68,7 @@ def list_videos():
                 annotated=video["video_id"] in annotated,
                 image_count=video["image_count"],
                 completed=video["video_id"] in completed,
+                has_video=video["has_video"],
             )
             for video in list_source_videos()
         ]

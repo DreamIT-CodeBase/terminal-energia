@@ -53,17 +53,12 @@ CLASSES_FILE = "classes.txt"
 
 
 # ============================================================
-# TWO-STAGE LABELLING LAYOUT
+# DATASET STAGES
 #
-# Inside the annotated container, per video:
-#
-#   video-id/board/images/<frame>.png
-#   video-id/board/labels/<frame>.txt
-#   video-id/board/annotations.json
-#   video-id/board_crops/<frame>__<n>.png   <- stage 2 input
-#   video-id/price_region/images/<crop>.png
-#   video-id/price_region/labels/<crop>.txt
-#   video-id/price_region/annotations.json
+# One submit produces two datasets from the same work: boards
+# are boxes on a captured frame, price regions are boxes inside
+# the crop each board box defines. They stay separate because
+# they train two single-class detectors on different images.
 # ============================================================
 
 STAGE_BOARD = "board"
@@ -72,16 +67,29 @@ STAGE_PRICE_REGION = "price_region"
 
 STAGES = (STAGE_BOARD, STAGE_PRICE_REGION)
 
-BOARD_CROPS_DIR = "board_crops"
 
-# Work in progress lives under a reserved root prefix inside the annotated
-# container. A video must not appear in that container under its own id until
-# both passes are done, because the UI treats "present in the annotated
-# container" as "finished". Parking half-done work here keeps an interrupted
-# video in the queue with its crops intact.
+# ============================================================
+# WORKING AREA
+#
+# Frames captured from a video are written here as soon as they
+# are extracted, so labelling survives a page reload:
+#
+#   _in_progress/video-id/frames/t00012340.png
+#   _in_progress/video-id/frames.json
+#
+# It is a reserved root prefix inside the annotated container.
+# A video must not appear in that container under its own id
+# until it is submitted, because "present in the annotated
+# container" is what marks it finished.
+# ============================================================
+
 WORKING_PREFIX = "_in_progress"
 
-BOARD_PAYLOAD_FILE = "board_annotations.json"
+WORKING_FRAMES_DIR = "frames"
+
+# Records the timestamp each captured frame came from, which the
+# file name alone would only carry by convention.
+FRAME_MANIFEST_FILE = "frames.json"
 
 
 # ============================================================

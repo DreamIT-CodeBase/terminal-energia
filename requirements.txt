@@ -12,8 +12,12 @@ azure-storage-file-datalake
 # Multipart uploads for POST /files/upload.
 python-multipart
 
-# Cropping frames to their board boxes between labelling stages.
+# Cropping frames to their board boxes when a video is submitted.
 Pillow
+
+# Decoding video.mp4 to capture a frame at an exact timestamp. The wheel
+# bundles FFmpeg, so the image needs no apt layer for it.
+av==18.*
 
 # Short-lived device tokens for the /v1 API.
 PyJWT

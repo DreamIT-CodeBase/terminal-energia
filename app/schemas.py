@@ -19,9 +19,12 @@ class VideoSummary(BaseModel):
     video_id: str
     annotated: bool
     image_count: int = 0
-    # True once the price-region pass has been submitted, which finishes
-    # the video. The UI drops finished videos from its list.
+    # True once the video has been submitted, which finishes it. The UI drops
+    # finished videos from its list.
     completed: bool = False
+    # Frames are captured from video.mp4, so a video without one cannot be
+    # labelled at all and the UI hides it.
+    has_video: bool = False
 
 
 class VideoListResponse(BaseModel):
@@ -144,46 +147,105 @@ class UploadResponse(BaseModel):
 
 
 # ============================================================
-# TWO-STAGE LABELLING
+# FRAME CAPTURE
+#
+# The labeller scrubs video.mp4 and picks moments; each pick is
+# decoded server side and parked in the working area.
 # ============================================================
 
-class StageImage(BaseModel):
-    """One frame (stage 1) or one crop (stage 2) with its boxes."""
+class VideoProbeResponse(BaseModel):
+    video_id: str
+    # Milliseconds, so the UI can offer a spread of evenly spaced captures
+    # without waiting for the browser to load metadata.
+    duration_ms: int
+    width: int
+    height: int
+    fps: float | None = None
 
+
+class CapturedFrame(BaseModel):
     name: str
     path: str
+    # The moment in the clip this frame was taken from.
+    timestamp_ms: int
     width: int = 0
     height: int = 0
-    annotations: list[AnnotationRecord]
+    size: int = 0
 
 
-class SubmitStageRequest(BaseModel):
-    images: list[StageImage]
+class CapturedFramesResponse(BaseModel):
+    video_id: str
+    frames: list[CapturedFrame]
+
+
+class CaptureFramesRequest(BaseModel):
+    timestamps_ms: list[int] = Field(alias="timestampsMs")
+
+    model_config = {"populate_by_name": True}
+
+
+class CaptureFramesResponse(BaseModel):
+    video_id: str
+    # Every frame the video now has, not just the ones this call produced.
+    frames: list[CapturedFrame]
+    captured: list[CapturedFrame]
+    # Timestamps that could not be decoded, as milliseconds.
+    skipped: list[str]
+
+
+# ============================================================
+# SUBMIT
+#
+# One request closes out a video: the frames worth keeping, the
+# boards drawn on them, and the price regions inside each board.
+# ============================================================
+
+class SubmitRegion(BaseModel):
+    # Normalised (0-1) [x, y, w, h] against the BOARD CROP, not the frame.
+    coordinates: list[float]
+
+    # Left empty when the labeller could not read the price off the board.
+    price: float | None = None
+
+
+class SubmitBoard(BaseModel):
+    # Normalised (0-1) [x, y, w, h] against the frame.
+    coordinates: list[float]
+
+    regions: list[SubmitRegion] = []
+
+
+class SubmitFrame(BaseModel):
+    # File name in the working area, e.g. t00012340.png.
+    name: str
+    timestamp_ms: int = Field(default=0, alias="timestampMs")
+    width: int = 0
+    height: int = 0
+
+    boards: list[SubmitBoard] = []
+
+    model_config = {"populate_by_name": True}
+
+
+class SubmitVideoRequest(BaseModel):
+    frames: list[SubmitFrame]
     saved_by: str = Field(default="unknown", alias="savedBy")
 
     model_config = {"populate_by_name": True}
 
 
-class SubmitStageResponse(BaseModel):
+class SubmitVideoResponse(BaseModel):
     video_id: str
-    stage: str
-    # The ISO week the finished video was filed into, e.g. 2026-W34.
-    # Only set when the price-region pass completes.
+    # The ISO week the video was filed into, e.g. 2026-W34.
     week: str | None = None
-    images_written: int
-    # Board frames promoted from the working area when stage 2 completes.
-    board_images_written: int = 0
-    crops: list[BlobAsset]
+    frames_written: int
+    crops_written: int
+    regions_written: int
+    # Boards submitted with no price region inside them: valid, but worth
+    # calling out because they land in the dataset as background samples.
+    boards_without_regions: int = 0
     skipped: list[str]
     saved_at: str
-
-
-class StageStateResponse(BaseModel):
-    video_id: str
-    stage: str
-    board_submitted: bool
-    price_region_submitted: bool
-    crops: list[BlobAsset]
 
 
 # ============================================================

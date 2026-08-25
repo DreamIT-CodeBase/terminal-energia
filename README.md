@@ -21,12 +21,18 @@ browser  ──►  labelling-ui (Next.js, Microsoft login)  ──►  system-a
 **Source — `debugdirectory`** (read only)
 
 ```
-video-id/frames/          annotatable images
-video-id/crops/           annotatable images
-video-id/prepped/         annotatable images
+video-id/video.mp4        what labelling works from
 video-id/api_response.json
-video-id/video.mp4
+video-id/frames/          left over from the pipeline, not used for labelling
+video-id/crops/           ditto
+video-id/prepped/         ditto
 ```
+
+`video.mp4` is the only thing labelling needs. Frames are decoded out of it on
+request rather than taken from `frames/`, so the labeller picks the moments
+worth annotating instead of inheriting whatever the pipeline extracted. A video
+without a `video.mp4` cannot be labelled, and `GET /videos` reports that as
+`has_video: false`.
 
 **Destination — `debugdirectoryannotated`** (written by this API)
 
@@ -40,20 +46,24 @@ snapshots/2026-W34/
     labels/<video-id>__<frame>.txt
     data.yaml
   price_region/
-    images/<video-id>__<crop>.png
-    labels/<video-id>__<crop>.txt
+    images/<video-id>__<frame>__<n>.png
+    labels/<video-id>__<frame>__<n>.txt
     data.yaml
   annotations/<video-id>.json
 
-_in_progress/<video-id>/          work that has not finished both passes
+_in_progress/<video-id>/frames/   frames captured but not yet submitted
+_in_progress/<video-id>/frames.json
 ```
 
-The two stages stay apart because they train two different single-class
-detectors on different images — full frames for boards, crops for price
+The two datasets stay apart because they train two different single-class
+detectors on different images — full frames for boards, board crops for price
 regions — so they cannot share one `data.yaml`.
 
 File names carry a `<video-id>__` prefix: a week pools many videos, and
-`frame_00000.png` is not unique across them.
+`t00012340.png` is not unique across them.
+
+A price is not something a YOLO label file can hold, so prices live only in
+`annotations/<video-id>.json`, alongside the boxes they belong to.
 
 `annotations/<video-id>.json` is both the stored record of what was drawn and
 the marker that the video is finished. Nothing else in the container is keyed
@@ -67,30 +77,54 @@ Every `/videos` route requires the `x-api-key` header.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check |
-| `GET` | `/videos` | Every video id, with an `annotated` flag |
+| `GET` | `/videos` | Every video id, with `annotated` and `has_video` flags |
 | `GET` | `/videos/{video_id}` | Images grouped by folder, plus `api_response.json` / `video.mp4` presence |
 | `GET` | `/videos/{video_id}/api-response` | Parsed `api_response.json` |
-| `GET` | `/videos/{video_id}/file/{blob_path}` | Raw bytes of one blob (image or video) |
-| `GET` | `/videos/{video_id}/annotations` | Previously saved `annotations.json` |
-| `POST` | `/videos/{video_id}/annotations` | Save annotated images and YOLO labels |
+| `GET` | `/videos/{video_id}/file/{blob_path}` | Raw bytes of one blob (image or video), range requests supported |
+| `GET` | `/videos/{video_id}/probe` | Duration, frame size and frame rate of `video.mp4` |
+| `GET` | `/videos/{video_id}/frames` | Frames captured so far, in the working area |
+| `POST` | `/videos/{video_id}/frames` | Decode and store frames at the given timestamps |
+| `GET` | `/videos/{video_id}/frames/{name}/file` | Bytes of one captured frame |
+| `DELETE` | `/videos/{video_id}/frames/{name}` | Discard one captured frame |
+| `POST` | `/videos/{video_id}/submit` | File the whole video into this week |
+| `GET` | `/videos/{video_id}/annotations` | Previously saved `annotations.json` (legacy single-pass flow) |
+| `POST` | `/videos/{video_id}/annotations` | Save annotated images and YOLO labels (legacy single-pass flow) |
 
 Image bytes are streamed through the API rather than handed out as SAS URLs, so
 no CORS rule is needed on the storage account and access stays behind the login.
 
-### Save payload
+### Capturing frames
+
+```json
+{ "timestampsMs": [1200, 3463, 6927] }
+```
+
+Each timestamp is decoded with PyAV: the seek lands on the keyframe at or
+before it, then decoding runs forward to the requested moment, so the frame
+returned is the one that was on screen and not the nearest keyframe. A capture
+is named after its timestamp (`t00003463.png`), which makes capturing the same
+moment twice idempotent rather than a duplicate.
+
+### Submit payload
+
+One request closes out a whole video.
 
 ```json
 {
-  "classes": [{ "id": "class-board", "name": "board", "color": "#3B82F6" }],
-  "images": [
+  "frames": [
     {
-      "name": "0001.jpg",
-      "path": "video-id/frames/0001.jpg",
-      "folder": "frames",
+      "name": "t00003463.png",
+      "timestampMs": 3463,
       "width": 1920,
       "height": 1080,
-      "annotations": [
-        { "classId": "class-board", "type": "rect", "coordinates": [0.1, 0.2, 0.3, 0.4] }
+      "boards": [
+        {
+          "coordinates": [0.1, 0.2, 0.3, 0.25],
+          "regions": [
+            { "coordinates": [0.05, 0.1, 0.8, 0.2], "price": 1.849 },
+            { "coordinates": [0.05, 0.4, 0.8, 0.2], "price": null }
+          ]
+        }
       ]
     }
   ],
@@ -98,8 +132,18 @@ no CORS rule is needed on the storage account and access stays behind the login.
 }
 ```
 
-Coordinates are normalised to `0-1`. For `rect` they are `[x, y, w, h]` with
-`x, y` at the top-left; the API converts them to YOLO centre form on write.
+Coordinates are normalised to `0-1` as `[x, y, w, h]` with `x, y` at the
+top-left; the API converts them to YOLO centre form on write. A board box is
+normalised against its **frame**, a region box against its **board crop** — the
+UI draws regions on the frame clipped to the board, so the numbers arrive in the
+form the price-region dataset needs.
+
+Crops are cut here and nowhere else. Nothing is written for a board until the
+video is submitted, so moving or resizing a board box during labelling never
+invalidates a file that already exists.
+
+A `price` of `null` means the labeller could not read it off the board. The box
+is still a valid detection label, so it is written either way.
 
 
 ## Fabric lakehouse

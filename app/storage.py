@@ -96,19 +96,22 @@ def now_iso() -> str:
 # ============================================================
 
 def list_videos() -> list[dict]:
-    """Every video id, newest first, with how many annotatable images it holds.
+    """Every video id, newest first, with what it holds.
 
     Video ids start with a UTC timestamp (``20260810-122718-0b1a``), so sorting
     the id in reverse is a temporal sort, newest first.
 
-    Not every video in the debug directory has been through the frame
-    extraction stage -- plenty hold only JSON -- so the count lets the UI open
-    on one that actually has something to annotate.
+    `has_video` is what decides whether a video can be labelled at all: frames
+    are captured from `video.mp4`, so an entry without one is a dead end and
+    the UI hides it. `image_count` counts whatever the pipeline extracted into
+    the image folders; the labelling flow no longer uses those, but the number
+    still says whether a video was ever processed.
     """
 
     container = get_source_container()
 
     counts: dict[str, int] = {}
+    with_video: set[str] = set()
 
     for blob in container.list_blobs():
 
@@ -121,6 +124,10 @@ def list_videos() -> list[dict]:
 
         counts.setdefault(video_id, 0)
 
+        if len(parts) == 2 and parts[1] == VIDEO_FILE:
+            with_video.add(video_id)
+            continue
+
         if (
             len(parts) >= 3
             and parts[1] in IMAGE_FOLDERS
@@ -129,7 +136,11 @@ def list_videos() -> list[dict]:
             counts[video_id] += 1
 
     return [
-        {"video_id": video_id, "image_count": counts[video_id]}
+        {
+            "video_id": video_id,
+            "image_count": counts[video_id],
+            "has_video": video_id in with_video,
+        }
         for video_id in sorted(counts, reverse=True)
     ]
 

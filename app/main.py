@@ -17,7 +17,7 @@ from app.routers.annotations import router as annotations_router
 from app.routers.devices import router as devices_router
 from app.routers.files import router as files_router
 from app.routers.files import health_router as fabric_health_router
-from app.routers.stages import router as stages_router
+from app.routers.labelling import router as labelling_router
 from app.routers.videos import router as videos_router
 
 
@@ -46,13 +46,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Labelling System API",
-    version="1.3.0",
+    version="2.0.0",
     description=(
-        "Reads annotation source data from the debug directory "
-        "container and writes annotated images and YOLO labels "
-        "back to the annotated container in two passes: boards on "
-        "the frames, then price regions on the crops. Also stores "
-        "JSON documents in the Microsoft Fabric lakehouse."
+        "Frames are captured from a source video on request, boards "
+        "are labelled on those frames and price regions inside each "
+        "board, and one submit files the video into that week as a "
+        "YOLO dataset. Also stores JSON documents in the Microsoft "
+        "Fabric lakehouse."
     ),
     lifespan=lifespan,
 )
@@ -72,8 +72,8 @@ app.add_middleware(
 app.include_router(videos_router)
 app.include_router(annotations_router)
 
-# Two-pass labelling: boards on the frames, then price regions on the crops.
-app.include_router(stages_router)
+# Labelling: capture frames from the video, then submit the whole video once.
+app.include_router(labelling_router)
 
 # Device API: token auth plus brokered SAS for artifact upload and model
 # download, so the storage account key never ships in the APK. Deliberately
