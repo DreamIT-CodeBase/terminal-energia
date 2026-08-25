@@ -9,12 +9,15 @@ export const dynamic = 'force-dynamic';
 
 
 // ============================================================
-// WHICH LABELLING STAGE A VIDEO IS ON
+// LENGTH AND FRAME SIZE OF THE SOURCE CLIP
+//
+// Read before the video is played, so the capture controls can
+// offer a spread across the clip straight away.
 // ============================================================
 
 export async function GET(
   _request: Request,
-  context: RouteContext<'/api/videos/[videoId]/stage'>
+  context: RouteContext<'/api/videos/[videoId]/probe'>
 ) {
 
   try {
@@ -23,7 +26,7 @@ export async function GET(
     const { videoId } = await context.params;
 
     const data = await systemApiJson(
-      `/videos/${encodeURIComponent(videoId)}/stage`
+      `/videos/${encodeURIComponent(videoId)}/probe`
     );
 
     return Response.json(data);

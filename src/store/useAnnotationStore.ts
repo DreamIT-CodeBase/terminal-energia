@@ -1,462 +1,792 @@
 import { create } from 'zustand';
-import { ImageItem, AnnotationClass, Annotation, CanvasSettings, WorkflowStage } from '../types';
 
-interface HistoryState {
-  images: ImageItem[];
-  classes: AnnotationClass[];
-  annotations: Annotation[];
+import {
+  Annotation,
+  AnnotationClass,
+  BoardBox,
+  CanvasSettings,
+  CapturedFrame,
+  ImageItem,
+  PriceRegion,
+  Selection
+} from '../types';
+
+
+/**
+ * One store for one video.
+ *
+ * The model is the video: frames captured from it, boards drawn on those
+ * frames, price regions drawn inside each board. The canvas underneath is
+ * deliberately generic -- it draws boxes over one image and knows nothing
+ * about any of that -- so this store also publishes a canvas-shaped view of
+ * whatever is selected, and routes the boxes the canvas produces back to the
+ * right place.
+ *
+ * A board is not a separate image: it is its frame with a crop window
+ * applied. Nothing is cut until the video is submitted, so moving a board box
+ * simply re-frames the view instead of invalidating a file.
+ */
+
+
+interface ModelSnapshot {
+  frames: CapturedFrame[];
+  boards: BoardBox[];
+  regions: PriceRegion[];
 }
 
-interface AnnotationState {
+
+interface AnnotationState extends ModelSnapshot {
   projectName: string;
-  // The video id currently open. There is only ever one project, so the video
-  // is what scopes images, annotations and the local draft.
   videoId: string | null;
-  // Labelling runs in two passes over a video: boards on the full frames,
-  // then price regions on the crops those boards produced.
-  stage: WorkflowStage;
-  images: ImageItem[];
+  // Length of the source clip, so the capture controls can offer a spread.
+  durationMs: number;
+
+  selection: Selection;
+
   classes: AnnotationClass[];
+
+  // ----- canvas-facing view, derived from the model above -----
+  images: ImageItem[];
   annotations: Annotation[];
   selectedImageId: string | null;
   selectedAnnotationId: string | null;
   canvasSettings: CanvasSettings;
 
-  // History Stack
-  history: HistoryState[];
+  history: ModelSnapshot[];
   historyIndex: number;
 
-  // Actions
-  setProjectName: (name: string) => void;
-  setStage: (stage: WorkflowStage) => void;
-  setImages: (images: ImageItem[]) => void;
-  addImage: (image: ImageItem) => void;
-  deleteImage: (id: string) => void;
-  renameImage: (id: string, name: string) => void;
-  setSelectedImageId: (id: string | null) => void;
+  // ----- video -----
+  loadVideo: (
+    videoId: string,
+    durationMs: number,
+    frames: CapturedFrame[],
+    boards: BoardBox[],
+    regions: PriceRegion[]
+  ) => void;
+  clearProject: () => void;
+  setDurationMs: (durationMs: number) => void;
 
-  setClasses: (classes: AnnotationClass[]) => void;
-  addClass: (cls: AnnotationClass) => void;
-  deleteClass: (id: string) => void;
-  renameClass: (id: string, name: string) => void;
-  updateClassColor: (id: string, color: string) => void;
+  // ----- navigation -----
+  select: (selection: Selection) => void;
 
-  addAnnotation: (ann: Annotation) => void;
+  // ----- frames -----
+  setFrames: (frames: CapturedFrame[]) => void;
+  removeFrame: (frameName: string) => void;
+
+  // ----- boards and regions -----
+  setRegionPrice: (regionId: string, price: string) => void;
+
+  // ----- canvas callbacks -----
+  addAnnotation: (annotation: Annotation) => void;
   deleteAnnotation: (id: string) => void;
   updateAnnotationCoordinates: (id: string, coordinates: number[]) => void;
-  updateAnnotationClass: (id: string, classId: string) => void;
   setSelectedAnnotationId: (id: string | null) => void;
-
+  setSelectedImageId: (id: string | null) => void;
+  setImageDimensions: (imageId: string, width: number, height: number) => void;
   updateCanvasSettings: (settings: Partial<CanvasSettings>) => void;
   resetCanvas: () => void;
 
-  // History actions
+  // ----- history -----
   saveHistory: () => void;
   undo: () => void;
   redo: () => void;
 
-  // Global operations
-  clearProject: () => void;
-  importProject: (classes: AnnotationClass[], annotations: Annotation[], images?: ImageItem[]) => void;
-  setImageProgress: (imageId: string, progress: 'todo' | 'in-progress' | 'done') => void;
-  setImageDimensions: (imageId: string, width: number, height: number) => void;
-
-  // Azure backed video loading
-  loadVideoProject: (
-    videoId: string,
-    stage: WorkflowStage,
-    images: ImageItem[],
-    annotations: Annotation[]
-  ) => void;
-  readDraft: (videoId: string, stage: WorkflowStage) => Annotation[] | null;
-  clearDraft: (videoId: string, stage: WorkflowStage) => void;
+  // ----- draft -----
+  readDraft: (videoId: string) => ModelSnapshot | null;
+  clearDraft: (videoId: string) => void;
 }
+
 
 // Fixed for the whole tool: there is only ever one project.
 export const PROJECT_NAME = 'fuel-price-labelling';
 
+export const CLASS_BOARD = 'class-board';
+export const CLASS_PRICE_REGION = 'class-price-region';
+
 export const DEFAULT_CLASSES: AnnotationClass[] = [
-  { id: 'class-board', name: 'board', color: '#3B82F6' },       // Blue
-  { id: 'class-price-region', name: 'price region', color: '#EF4444' } // Red
+  { id: CLASS_BOARD, name: 'board', color: '#3B82F6' },            // Blue
+  { id: CLASS_PRICE_REGION, name: 'price region', color: '#EF4444' } // Red
 ];
 
 const INITIAL_SETTINGS: CanvasSettings = {
   zoom: 1,
   panX: 0,
   panY: 0,
-  tool: 'select',
+  tool: 'bbox',
   gridVisible: false,
   opacity: 0.6,
   brushWidth: 2
 };
 
-// Drafts are scoped per video so switching videos never mixes annotations.
-// Azure remains the source of truth; this only protects unsaved work from a
-// page reload.
-const draftKey = (videoId: string, stage: WorkflowStage) =>
-  `labelling_draft_${videoId}_${stage}`;
+
+// ============================================================
+// IDS
+// ============================================================
+
+let idCounter = 0;
+
+const nextId = (
+  prefix: string
+): string => {
+
+  idCounter += 1;
+
+  return `${prefix}-${idCounter.toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+};
+
+
+export const frameImageId = (
+  frameName: string
+): string => `frame:${frameName}`;
+
+export const boardImageId = (
+  boardId: string
+): string => `board:${boardId}`;
+
+
+export const frameUrl = (
+  videoId: string,
+  frameName: string
+): string =>
+  `/api/videos/${encodeURIComponent(videoId)}` +
+  `/frames/${encodeURIComponent(frameName)}/file`;
+
+
+/** `t00012340.png` at 12.34 s reads as `0:12.340`. */
+export const formatTimestamp = (
+  timestampMs: number
+): string => {
+
+  const totalSeconds = Math.floor(timestampMs / 1000);
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const millis = timestampMs % 1000;
+
+  return (
+    `${minutes}:` +
+    `${seconds.toString().padStart(2, '0')}.` +
+    `${millis.toString().padStart(3, '0')}`
+  );
+};
+
+
+export const boardLabel = (
+  boards: BoardBox[],
+  board: BoardBox,
+  frames: CapturedFrame[]
+): string => {
+
+  const frame = frames.find(item => item.name === board.frameName);
+
+  const position =
+    boards
+      .filter(item => item.frameName === board.frameName)
+      .findIndex(item => item.id === board.id) + 1;
+
+  const at = frame ? formatTimestamp(frame.timestampMs) : board.frameName;
+
+  return `${at} · board ${position}`;
+};
+
+
+// ============================================================
+// DRAFTS
+//
+// Captured frames live in the working area on the server, so a
+// draft only has to carry the boxes and prices that have not
+// been submitted yet.
+// ============================================================
+
+const draftKey = (
+  videoId: string
+): string => `labelling_draft_${videoId}`;
+
 
 const saveDraft = (
   videoId: string | null,
-  stage: WorkflowStage,
-  annotations: Annotation[]
+  boards: BoardBox[],
+  regions: PriceRegion[]
 ) => {
+
   if (typeof window === 'undefined' || !videoId) return;
+
   try {
     localStorage.setItem(
-      draftKey(videoId, stage),
-      JSON.stringify({ annotations })
+      draftKey(videoId),
+      JSON.stringify({ boards, regions })
     );
-  } catch (e) {
-    console.error('Failed to save draft:', e);
+
+  } catch (error) {
+    console.error('Failed to save draft:', error);
   }
 };
 
-export const useAnnotationStore = create<AnnotationState>((set, get) => ({
-  projectName: PROJECT_NAME,
-  videoId: null,
-  stage: 'board',
-  images: [],
-  classes: DEFAULT_CLASSES,
-  annotations: [],
-  selectedImageId: null,
-  selectedAnnotationId: null,
-  canvasSettings: INITIAL_SETTINGS,
 
-  // History Stack
-  history: [
-    {
-      images: [],
-      classes: DEFAULT_CLASSES,
-      annotations: []
+// ============================================================
+// THE CANVAS VIEW
+//
+// Turns whatever is selected into the one image the canvas
+// draws, plus the boxes that belong on it.
+// ============================================================
+
+const buildView = (
+  state: {
+    videoId: string | null;
+    selection: Selection;
+    frames: CapturedFrame[];
+    boards: BoardBox[];
+    regions: PriceRegion[];
+  }
+): {
+  images: ImageItem[];
+  annotations: Annotation[];
+  selectedImageId: string | null;
+} => {
+
+  const { videoId, selection, frames, boards, regions } = state;
+
+  if (!videoId || selection.kind === 'video') {
+    return { images: [], annotations: [], selectedImageId: null };
+  }
+
+
+  // --------------------------------------------------
+  // A FRAME: BOARDS ARE DRAWN ON IT
+  // --------------------------------------------------
+
+  if (selection.kind === 'frame') {
+
+    const frame = frames.find(item => item.name === selection.frameName);
+
+    if (!frame) {
+      return { images: [], annotations: [], selectedImageId: null };
     }
-  ],
-  historyIndex: 0,
 
-  // Save history snapshot
-  saveHistory: () => {
-    const { images, classes, annotations, history, historyIndex, videoId } = get();
-    const cleanHistory = history.slice(0, historyIndex + 1);
+    const imageId = frameImageId(frame.name);
 
-    const newSnapshot: HistoryState = {
-      images: JSON.parse(JSON.stringify(images)),
-      classes: JSON.parse(JSON.stringify(classes)),
-      annotations: JSON.parse(JSON.stringify(annotations))
+    const frameBoards = boards.filter(
+      board => board.frameName === frame.name
+    );
+
+    return {
+      images: [
+        {
+          id: imageId,
+          name: `${formatTimestamp(frame.timestampMs)}`,
+          width: frame.width,
+          height: frame.height,
+          url: frameUrl(videoId, frame.name),
+          progress: frameBoards.length > 0 ? 'in-progress' : 'todo'
+        }
+      ],
+      annotations: frameBoards.map(board => ({
+        id: board.id,
+        imageId,
+        classId: CLASS_BOARD,
+        type: 'rect' as const,
+        coordinates: board.coordinates
+      })),
+      selectedImageId: imageId
     };
+  }
 
-    // Limit history stack size to 50
-    const nextHistory = [...cleanHistory, newSnapshot];
-    if (nextHistory.length > 50) {
-      nextHistory.shift();
-    }
+
+  // --------------------------------------------------
+  // A BOARD: ITS FRAME, CLIPPED TO THE BOARD BOX
+  // --------------------------------------------------
+
+  const board = boards.find(item => item.id === selection.boardId);
+
+  if (!board) {
+    return { images: [], annotations: [], selectedImageId: null };
+  }
+
+  const frame = frames.find(item => item.name === board.frameName);
+
+  if (!frame) {
+    return { images: [], annotations: [], selectedImageId: null };
+  }
+
+  const imageId = boardImageId(board.id);
+
+  const boardRegions = regions.filter(
+    region => region.boardId === board.id
+  );
+
+  return {
+    images: [
+      {
+        id: imageId,
+        name: boardLabel(boards, board, frames),
+        // The canvas works these out from the crop window and the natural
+        // size of the frame it loads.
+        width: 0,
+        height: 0,
+        url: frameUrl(videoId, frame.name),
+        progress: boardRegions.length > 0 ? 'in-progress' : 'todo',
+        cropBox: board.coordinates
+      }
+    ],
+    annotations: boardRegions.map(region => ({
+      id: region.id,
+      imageId,
+      classId: CLASS_PRICE_REGION,
+      type: 'rect' as const,
+      coordinates: region.coordinates
+    })),
+    selectedImageId: imageId
+  };
+};
+
+
+const emptyModel: ModelSnapshot = {
+  frames: [],
+  boards: [],
+  regions: []
+};
+
+
+export const useAnnotationStore = create<AnnotationState>((set, get) => {
+
+  /**
+   * Re-derives the canvas view after any change to the model or the
+   * selection, so the two can never drift apart.
+   */
+  const rebuild = (
+    patch: Partial<AnnotationState>
+  ) => {
+
+    const next = { ...get(), ...patch };
 
     set({
-      history: nextHistory,
-      historyIndex: nextHistory.length - 1
-    });
+      ...patch,
+      ...buildView(next)
+    } as Partial<AnnotationState>);
+  };
 
-    saveDraft(videoId, get().stage, annotations);
-  },
 
-  // Undo Action
-  undo: () => {
-    const { history, historyIndex, videoId } = get();
-    if (historyIndex > 0) {
-      const prevIndex = historyIndex - 1;
-      const snapshot = history[prevIndex];
+  return {
+    projectName: PROJECT_NAME,
+    videoId: null,
+    durationMs: 0,
+
+    frames: [],
+    boards: [],
+    regions: [],
+
+    selection: { kind: 'video' },
+
+    classes: DEFAULT_CLASSES,
+
+    images: [],
+    annotations: [],
+    selectedImageId: null,
+    selectedAnnotationId: null,
+    canvasSettings: INITIAL_SETTINGS,
+
+    history: [emptyModel],
+    historyIndex: 0,
+
+
+    // ============================================================
+    // VIDEO
+    // ============================================================
+
+    loadVideo: (videoId, durationMs, frames, boards, regions) => {
+
+      const selection: Selection =
+        frames.length === 0
+          ? { kind: 'video' }
+          : { kind: 'frame', frameName: frames[0].name };
+
+      const model = { frames, boards, regions };
+
       set({
-        images: snapshot.images,
-        classes: snapshot.classes,
-        annotations: snapshot.annotations,
-        historyIndex: prevIndex,
-        selectedAnnotationId: null // Reset selection to avoid referencing deleted items
+        videoId,
+        durationMs,
+        ...model,
+        selection,
+        classes: DEFAULT_CLASSES,
+        selectedAnnotationId: null,
+        canvasSettings: INITIAL_SETTINGS,
+        history: [JSON.parse(JSON.stringify(model))],
+        historyIndex: 0,
+        ...buildView({ videoId, selection, ...model })
       });
-      saveDraft(videoId, get().stage, snapshot.annotations);
-    }
-  },
+    },
 
-  // Redo Action
-  redo: () => {
-    const { history, historyIndex, videoId } = get();
-    if (historyIndex < history.length - 1) {
-      const nextIndex = historyIndex + 1;
-      const snapshot = history[nextIndex];
+    clearProject: () => {
+
       set({
-        images: snapshot.images,
-        classes: snapshot.classes,
-        annotations: snapshot.annotations,
-        historyIndex: nextIndex,
+        videoId: null,
+        durationMs: 0,
+        ...emptyModel,
+        selection: { kind: 'video' },
+        classes: DEFAULT_CLASSES,
+        images: [],
+        annotations: [],
+        selectedImageId: null,
+        selectedAnnotationId: null,
+        canvasSettings: INITIAL_SETTINGS,
+        history: [emptyModel],
+        historyIndex: 0
+      });
+    },
+
+    setDurationMs: (durationMs) => {
+      set({ durationMs });
+    },
+
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+
+    select: (selection) => {
+
+      rebuild({
+        selection,
+        selectedAnnotationId: null,
+        // Every view has its own natural fit, which the canvas recomputes
+        // when the image loads.
+        canvasSettings: { ...get().canvasSettings, zoom: 1, panX: 0, panY: 0 }
+      });
+    },
+
+
+    // ============================================================
+    // FRAMES
+    // ============================================================
+
+    setFrames: (frames) => {
+
+      const known = new Set(frames.map(frame => frame.name));
+
+      // A frame that is gone from the working area takes its boards, and
+      // their regions, with it.
+      const boards = get().boards.filter(
+        board => known.has(board.frameName)
+      );
+
+      const boardIds = new Set(boards.map(board => board.id));
+
+      const regions = get().regions.filter(
+        region => boardIds.has(region.boardId)
+      );
+
+      const selection = get().selection;
+
+      const stillValid =
+        selection.kind === 'video' ||
+        (selection.kind === 'frame' && known.has(selection.frameName)) ||
+        (selection.kind === 'board' && boardIds.has(selection.boardId));
+
+      rebuild({
+        frames,
+        boards,
+        regions,
+        selection: stillValid ? selection : { kind: 'video' }
+      });
+
+      get().saveHistory();
+    },
+
+    removeFrame: (frameName) => {
+
+      const frames = get().frames.filter(
+        frame => frame.name !== frameName
+      );
+
+      get().setFrames(frames);
+    },
+
+
+    // ============================================================
+    // PRICES
+    // ============================================================
+
+    setRegionPrice: (regionId, price) => {
+
+      const regions = get().regions.map(region =>
+        region.id === regionId
+          ? { ...region, price }
+          : region
+      );
+
+      rebuild({ regions });
+
+      // Typing a price is a change worth keeping, but not one worth an undo
+      // step per keystroke, so the draft is written without a snapshot.
+      saveDraft(get().videoId, get().boards, regions);
+    },
+
+
+    // ============================================================
+    // BOXES DRAWN ON THE CANVAS
+    //
+    // Which list a box lands in is decided by what is selected,
+    // never by the canvas.
+    // ============================================================
+
+    addAnnotation: (annotation) => {
+
+      const { selection } = get();
+
+      if (selection.kind === 'frame') {
+
+        const board: BoardBox = {
+          id: nextId('board'),
+          frameName: selection.frameName,
+          coordinates: annotation.coordinates
+        };
+
+        rebuild({
+          boards: [...get().boards, board],
+          selectedAnnotationId: board.id
+        });
+
+      } else if (selection.kind === 'board') {
+
+        const region: PriceRegion = {
+          id: nextId('region'),
+          boardId: selection.boardId,
+          coordinates: annotation.coordinates,
+          price: ''
+        };
+
+        rebuild({
+          regions: [...get().regions, region],
+          selectedAnnotationId: region.id
+        });
+
+      } else {
+        return;
+      }
+
+      get().saveHistory();
+    },
+
+    deleteAnnotation: (id) => {
+
+      const { boards, regions, selection, selectedAnnotationId } = get();
+
+      const isBoard = boards.some(board => board.id === id);
+
+      if (isBoard) {
+
+        const nextBoards = boards.filter(board => board.id !== id);
+
+        // A board's regions have nowhere to live without it.
+        const nextRegions = regions.filter(region => region.boardId !== id);
+
+        rebuild({
+          boards: nextBoards,
+          regions: nextRegions,
+          selectedAnnotationId:
+            selectedAnnotationId === id ? null : selectedAnnotationId,
+          selection:
+            selection.kind === 'board' && selection.boardId === id
+              ? { kind: 'video' }
+              : selection
+        });
+
+      } else {
+
+        rebuild({
+          regions: regions.filter(region => region.id !== id),
+          selectedAnnotationId:
+            selectedAnnotationId === id ? null : selectedAnnotationId
+        });
+      }
+
+      get().saveHistory();
+    },
+
+    updateAnnotationCoordinates: (id, coordinates) => {
+
+      const { boards, regions } = get();
+
+      if (boards.some(board => board.id === id)) {
+
+        rebuild({
+          boards: boards.map(board =>
+            board.id === id
+              ? { ...board, coordinates }
+              : board
+          )
+        });
+
+      } else {
+
+        rebuild({
+          regions: regions.map(region =>
+            region.id === id
+              ? { ...region, coordinates }
+              : region
+          )
+        });
+      }
+
+      get().saveHistory();
+    },
+
+    setSelectedAnnotationId: (id) => {
+      set({ selectedAnnotationId: id });
+    },
+
+    setSelectedImageId: (id) => {
+      // The view holds exactly one image, so this only ever clears selection.
+      set({ selectedImageId: id, selectedAnnotationId: null });
+    },
+
+    setImageDimensions: (imageId, width, height) => {
+
+      const { frames, selection } = get();
+
+      // Only a frame has a size worth recording; a board's size is a function
+      // of its frame and its crop window.
+      if (selection.kind !== 'frame') return;
+
+      const target = frames.find(
+        frame => frameImageId(frame.name) === imageId
+      );
+
+      if (!target || (target.width === width && target.height === height)) {
+        return;
+      }
+
+      rebuild({
+        frames: frames.map(frame =>
+          frame.name === target.name
+            ? { ...frame, width, height }
+            : frame
+        )
+      });
+    },
+
+    updateCanvasSettings: (settings) => {
+      set(state => ({
+        canvasSettings: { ...state.canvasSettings, ...settings }
+      }));
+    },
+
+    resetCanvas: () => {
+      set(state => ({
+        canvasSettings: {
+          ...state.canvasSettings,
+          zoom: 1,
+          panX: 0,
+          panY: 0
+        }
+      }));
+    },
+
+
+    // ============================================================
+    // HISTORY
+    // ============================================================
+
+    saveHistory: () => {
+
+      const { frames, boards, regions, history, historyIndex, videoId } = get();
+
+      const snapshot: ModelSnapshot = JSON.parse(
+        JSON.stringify({ frames, boards, regions })
+      );
+
+      const nextHistory = [
+        ...history.slice(0, historyIndex + 1),
+        snapshot
+      ];
+
+      // Bounded so a long session cannot grow without limit.
+      if (nextHistory.length > 50) {
+        nextHistory.shift();
+      }
+
+      set({
+        history: nextHistory,
+        historyIndex: nextHistory.length - 1
+      });
+
+      saveDraft(videoId, boards, regions);
+    },
+
+    undo: () => {
+
+      const { history, historyIndex, videoId } = get();
+
+      if (historyIndex <= 0) return;
+
+      const snapshot = history[historyIndex - 1];
+
+      rebuild({
+        ...snapshot,
+        historyIndex: historyIndex - 1,
         selectedAnnotationId: null
       });
-      saveDraft(videoId, get().stage, snapshot.annotations);
-    }
-  },
 
-  setProjectName: (name) => {
-    set({ projectName: name });
-  },
+      saveDraft(videoId, snapshot.boards, snapshot.regions);
+    },
 
-  setStage: (stage) => {
-    set({ stage, selectedAnnotationId: null });
-  },
+    redo: () => {
 
-  setImages: (images) => {
-    set({
-      images,
-      selectedImageId: images.length > 0 ? images[0].id : null,
-      selectedAnnotationId: null
-    });
-    get().saveHistory();
-  },
+      const { history, historyIndex, videoId } = get();
 
-  addImage: (image) => {
-    const { images } = get();
-    const exists = images.find(img => img.name === image.name);
-    if (exists) return; // Avoid duplicate names
+      if (historyIndex >= history.length - 1) return;
 
-    set((state) => {
-      const newImages = [...state.images, image];
-      return {
-        images: newImages,
-        selectedImageId: state.selectedImageId ? state.selectedImageId : image.id
-      };
-    });
-    get().saveHistory();
-  },
+      const snapshot = history[historyIndex + 1];
 
-  deleteImage: (id) => {
-    const { images, selectedImageId, annotations } = get();
-    const filteredImages = images.filter(img => img.id !== id);
-    const filteredAnnotations = annotations.filter(ann => ann.imageId !== id);
+      rebuild({
+        ...snapshot,
+        historyIndex: historyIndex + 1,
+        selectedAnnotationId: null
+      });
 
-    let nextSelectedId = selectedImageId;
-    if (selectedImageId === id) {
-      nextSelectedId = filteredImages.length > 0 ? filteredImages[0].id : null;
-    }
+      saveDraft(videoId, snapshot.boards, snapshot.regions);
+    },
 
-    set({
-      images: filteredImages,
-      annotations: filteredAnnotations,
-      selectedImageId: nextSelectedId,
-      selectedAnnotationId: null
-    });
-    get().saveHistory();
-  },
 
-  renameImage: (id, name) => {
-    set((state) => ({
-      images: state.images.map(img => img.id === id ? { ...img, name } : img)
-    }));
-    get().saveHistory();
-  },
+    // ============================================================
+    // DRAFT
+    // ============================================================
 
-  setSelectedImageId: (id) => {
-    set({ selectedImageId: id, selectedAnnotationId: null });
-  },
+    readDraft: (videoId) => {
 
-  setClasses: (classes) => {
-    set({ classes });
-    get().saveHistory();
-  },
+      if (typeof window === 'undefined') return null;
 
-  addClass: (cls) => {
-    set((state) => ({
-      classes: [...state.classes, cls]
-    }));
-    get().saveHistory();
-  },
+      try {
+        const raw = localStorage.getItem(draftKey(videoId));
 
-  deleteClass: (id) => {
-    const { classes, annotations } = get();
-    // Re-map or delete annotations associated with this class. Let's delete them.
-    const filteredClasses = classes.filter(c => c.id !== id);
-    const filteredAnnotations = annotations.filter(ann => ann.classId !== id);
+        if (!raw) return null;
 
-    set({
-      classes: filteredClasses,
-      annotations: filteredAnnotations,
-      selectedAnnotationId: null
-    });
-    get().saveHistory();
-  },
+        const parsed = JSON.parse(raw);
 
-  renameClass: (id, name) => {
-    set((state) => ({
-      classes: state.classes.map(c => c.id === id ? { ...c, name } : c)
-    }));
-    get().saveHistory();
-  },
-
-  updateClassColor: (id, color) => {
-    set((state) => ({
-      classes: state.classes.map(c => c.id === id ? { ...c, color } : c)
-    }));
-    get().saveHistory();
-  },
-
-  addAnnotation: (ann) => {
-    set((state) => ({
-      annotations: [...state.annotations, ann],
-      selectedAnnotationId: ann.id
-    }));
-
-    // Automatically update image progress to in-progress or done
-    const { selectedImageId } = get();
-    if (selectedImageId) {
-      get().setImageProgress(selectedImageId, 'in-progress');
-    }
-    get().saveHistory();
-  },
-
-  deleteAnnotation: (id) => {
-    const { annotations, selectedAnnotationId, selectedImageId } = get();
-    const filteredAnnotations = annotations.filter(ann => ann.id !== id);
-
-    set({
-      annotations: filteredAnnotations,
-      selectedAnnotationId: selectedAnnotationId === id ? null : selectedAnnotationId
-    });
-
-    // If no annotations remain for this image, mark progress as todo
-    if (selectedImageId) {
-      const remainingForImage = filteredAnnotations.filter(ann => ann.imageId === selectedImageId);
-      if (remainingForImage.length === 0) {
-        get().setImageProgress(selectedImageId, 'todo');
-      }
-    }
-    get().saveHistory();
-  },
-
-  updateAnnotationCoordinates: (id, coordinates) => {
-    set((state) => ({
-      annotations: state.annotations.map(ann => ann.id === id ? { ...ann, coordinates } : ann)
-    }));
-    get().saveHistory();
-  },
-
-  updateAnnotationClass: (id, classId) => {
-    set((state) => ({
-      annotations: state.annotations.map(ann => ann.id === id ? { ...ann, classId } : ann)
-    }));
-    get().saveHistory();
-  },
-
-  setSelectedAnnotationId: (id) => {
-    set({ selectedAnnotationId: id });
-  },
-
-  updateCanvasSettings: (settings) => {
-    set((state) => ({
-      canvasSettings: { ...state.canvasSettings, ...settings }
-    }));
-  },
-
-  resetCanvas: () => {
-    set((state) => ({
-      canvasSettings: {
-        ...state.canvasSettings,
-        zoom: 1,
-        panX: 0,
-        panY: 0
-      }
-    }));
-  },
-
-  clearProject: () => {
-    set({
-      videoId: null,
-      stage: 'board',
-      images: [],
-      classes: DEFAULT_CLASSES,
-      annotations: [],
-      selectedImageId: null,
-      selectedAnnotationId: null,
-      canvasSettings: INITIAL_SETTINGS,
-      history: [
-        {
-          images: [],
-          classes: DEFAULT_CLASSES,
-          annotations: []
+        if (
+          !Array.isArray(parsed?.boards) ||
+          !Array.isArray(parsed?.regions)
+        ) {
+          return null;
         }
-      ],
-      historyIndex: 0
-    });
-  },
 
-  importProject: (classes, annotations, images) => {
-    const currentImages = get().images;
-    const finalImages = images ? images : currentImages;
-    set((state) => ({
-      classes,
-      annotations,
-      images: finalImages,
-      selectedImageId: finalImages.length > 0 ? finalImages[0].id : state.selectedImageId,
-      selectedAnnotationId: null
-    }));
-    get().saveHistory();
-  },
+        return {
+          frames: [],
+          boards: parsed.boards as BoardBox[],
+          regions: parsed.regions as PriceRegion[]
+        };
 
-  setImageProgress: (imageId, progress) => {
-    set((state) => ({
-      images: state.images.map(img => img.id === imageId ? { ...img, progress } : img)
-    }));
-  },
+      } catch (error) {
+        console.error('Failed to read draft:', error);
+        return null;
+      }
+    },
 
-  // Recorded once the canvas has the natural size, so saved annotations carry
-  // real pixel dimensions alongside the normalised coordinates.
-  setImageDimensions: (imageId, width, height) => {
-    const { images } = get();
-    const target = images.find(img => img.id === imageId);
-    if (!target || (target.width === width && target.height === height)) return;
-
-    set({
-      images: images.map(img =>
-        img.id === imageId ? { ...img, width, height } : img
-      )
-    });
-  },
-
-  // ============================================================
-  // AZURE BACKED LOADING
-  // ============================================================
-
-  loadVideoProject: (videoId, stage, images, annotations) => {
-    set({
-      videoId,
-      stage,
-      images,
-      classes: DEFAULT_CLASSES,
-      annotations,
-      selectedImageId: images.length > 0 ? images[0].id : null,
-      selectedAnnotationId: null,
-      canvasSettings: INITIAL_SETTINGS,
-      history: [
-        {
-          images: JSON.parse(JSON.stringify(images)),
-          classes: DEFAULT_CLASSES,
-          annotations: JSON.parse(JSON.stringify(annotations))
-        }
-      ],
-      historyIndex: 0
-    });
-  },
-
-  readDraft: (videoId, stage) => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem(draftKey(videoId, stage));
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed?.annotations)) return null;
-      return parsed.annotations as Annotation[];
-    } catch (e) {
-      console.error('Failed to read draft:', e);
-      return null;
+    clearDraft: (videoId) => {
+      if (typeof window === 'undefined') return;
+      localStorage.removeItem(draftKey(videoId));
     }
-  },
-
-  clearDraft: (videoId, stage) => {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem(draftKey(videoId, stage));
-  }
-}));
+  };
+});

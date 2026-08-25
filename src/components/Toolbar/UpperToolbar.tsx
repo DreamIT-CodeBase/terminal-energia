@@ -15,6 +15,8 @@ import {
   RefreshCw,
   Image as ImageIcon,
   CheckCircle,
+  CheckCircle2,
+  Loader2,
   Tag,
   LogOut,
   ShieldAlert,
@@ -31,6 +33,10 @@ interface UpperToolbarProps {
   videoId: string | null;
   onVideoChange: (videoId: string) => void;
   onRefresh: () => void;
+  // Submitting closes out the whole video, so it lives up here rather than on
+  // any one of the three sections.
+  onSubmit: () => void;
+  isSubmitting: boolean;
 }
 
 
@@ -41,15 +47,18 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
   videos,
   videoId,
   onVideoChange,
-  onRefresh
+  onRefresh,
+  onSubmit,
+  isSubmitting
 }) => {
 
   const {
     history,
     historyIndex,
     canvasSettings,
-    images,
-    annotations,
+    frames,
+    boards,
+    regions,
     undo,
     redo,
     updateCanvasSettings
@@ -96,12 +105,12 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
   // COUNTS
   // ============================================================
 
-  const annotatedImagesCount = images.filter(
-    image =>
-      annotations.some(
-        annotation => annotation.imageId === image.id
-      )
+  const pricedCount = regions.filter(
+    region => region.price.trim() !== ''
   ).length;
+
+  // Nothing can be filed without at least one board on a frame.
+  const canSubmit = boards.length > 0;
 
 
   // ============================================================
@@ -239,7 +248,6 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
                   value={video.videoId}
                 >
                   {video.videoId}
-                  {`  ${video.imageCount} img`}
                   {video.annotated ? '  (saved)' : ''}
                 </option>
               ))
@@ -329,7 +337,7 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
               "
             />
 
-            {images.length} images
+            {frames.length} frames
           </span>
 
 
@@ -347,7 +355,7 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
               "
             />
 
-            {annotations.length} objects
+            {boards.length} boards
           </span>
 
 
@@ -366,7 +374,7 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
               "
             />
 
-            {annotatedImagesCount}/{images.length} annotated
+            {pricedCount}/{regions.length} priced
           </span>
 
         </div>
@@ -507,7 +515,7 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
 
 
       {/* ===================================================== */}
-      {/* RIGHT: SAVE, EXPORT, ACCOUNT */}
+      {/* RIGHT: SUBMIT, ACCOUNT */}
       {/* ===================================================== */}
 
       <div
@@ -517,6 +525,56 @@ export const UpperToolbar: React.FC<UpperToolbarProps> = ({
           gap-2
         "
       >
+
+        {/* SUBMIT THE WHOLE VIDEO */}
+
+        <button
+          onClick={onSubmit}
+          disabled={isSubmitting || !canSubmit}
+          title={
+            canSubmit
+              ? 'File this video into this week and move on'
+              : 'Draw at least one board before submitting'
+          }
+          className="
+            flex
+            items-center
+            gap-2
+            px-4
+            py-2
+            rounded
+            bg-blue-600
+            hover:bg-blue-500
+            disabled:opacity-40
+            text-sm
+            font-semibold
+            text-white
+            transition-colors
+          "
+        >
+          {
+            isSubmitting
+              ? (
+                <Loader2
+                  className="
+                    w-4
+                    h-4
+                    animate-spin
+                  "
+                />
+              )
+              : (
+                <CheckCircle2
+                  className="
+                    w-4
+                    h-4
+                  "
+                />
+              )
+          }
+          Submit video
+        </button>
+
 
         {/* ACCOUNT */}
 

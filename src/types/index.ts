@@ -1,22 +1,87 @@
 export type VideoFolder = 'frames' | 'crops' | 'prepped';
 
 /**
- * Labelling runs in two passes over a video: boards are drawn on the full
- * frames, then the crops those boards produce are labelled for price regions.
+ * Labelling runs down one video: frames are captured from it, boards are
+ * drawn on those frames, and price regions are drawn inside each board.
+ * The section names double as the three things a box can belong to.
  */
-export type WorkflowStage = 'board' | 'price_region';
+export type WorkspaceSection = 'video' | 'frames' | 'boards';
+
+
+// ============================================================
+// THE LABELLING MODEL
+//
+// One video at a time. Everything below hangs off it.
+// ============================================================
+
+/** A moment taken out of the source clip and stored in the working area. */
+export interface CapturedFrame {
+  // File name in the working area, e.g. `t00012340.png`. Derived from the
+  // timestamp, so capturing the same moment twice is not a duplicate.
+  name: string;
+  path: string;
+  timestampMs: number;
+  // Natural pixel size, filled in by the API and confirmed by the canvas.
+  width: number;
+  height: number;
+  size: number;
+}
+
+
+/** A price board, boxed on a captured frame. */
+export interface BoardBox {
+  id: string;
+  frameName: string;
+  // Normalised [x, y, w, h] against the frame, x and y at the top-left.
+  coordinates: number[];
+}
+
+
+/** One price on a board, boxed inside that board's crop. */
+export interface PriceRegion {
+  id: string;
+  boardId: string;
+  // Normalised [x, y, w, h] against the BOARD CROP, not the frame. The board
+  // view draws the frame clipped to the board box, so this is what the canvas
+  // produces directly and what the price-region dataset wants.
+  coordinates: number[];
+  // Held as typed so a half-entered value survives; empty means the labeller
+  // could not read it off the board, which is allowed.
+  price: string;
+}
+
+
+/**
+ * What the centre of the workspace is showing. The three sidebar sections
+ * navigate between these.
+ */
+export type Selection =
+  | { kind: 'video' }
+  | { kind: 'frame'; frameName: string }
+  | { kind: 'board'; boardId: string };
+
+
+// ============================================================
+// CANVAS
+//
+// The canvas is deliberately generic: it draws boxes over one
+// image. The store adapts the model above into this shape, so
+// a board is just its frame with a crop window applied.
+// ============================================================
 
 export interface ImageItem {
   id: string;
   name: string;
   width: number;
   height: number;
-  url: string; // Object URL or base64
+  url: string;
   progress: 'todo' | 'in-progress' | 'done';
-  workflowStage?: WorkflowStage;
-  // Azure Blob Storage origin, set for every image loaded from `debugdirectory`.
-  blobPath?: string;
-  folder?: VideoFolder;
+  /**
+   * Normalised [x, y, w, h] window into the source image. Set for a board:
+   * the canvas shows only that part of the frame, and boxes drawn on it are
+   * normalised against the window rather than the whole frame.
+   */
+  cropBox?: number[];
 }
 
 export interface AnnotationClass {
@@ -48,6 +113,7 @@ export interface CanvasSettings {
   brushWidth: number;
 }
 
+
 // ============================================================
 // AZURE BLOB STORAGE
 // ============================================================
@@ -69,49 +135,40 @@ export interface VideoAssets {
 export interface VideoSummary {
   videoId: string;
   annotated: boolean;
-  // Both passes submitted. Finished videos are dropped from the list.
+  // Submitted, and so filed into a week. Finished videos drop off the list.
   completed: boolean;
-  // Many videos in the debug directory hold only JSON and no extracted
-  // frames, so the count decides which one is worth opening.
+  // Frames are captured from video.mp4, so a video without one cannot be
+  // labelled and is hidden.
+  hasVideo: boolean;
   imageCount: number;
 }
 
-/**
- * Annotation shape as it is stored in `debugdirectoryannotated`. It drops the
- * client-side image id in favour of the blob path so a reload can rebuild the
- * project from storage alone.
- */
-export type AnnotationRecord = Omit<Annotation, 'id' | 'imageId'>;
-
-export interface SavedAnnotationImage {
-  name: string;
-  path: string;
-  folder: VideoFolder;
+/** What the API reports about the source clip, before it is played. */
+export interface VideoProbe {
+  video_id: string;
+  duration_ms: number;
   width: number;
   height: number;
-  annotations: AnnotationRecord[];
+  fps: number | null;
 }
 
-/**
- * `video-id/annotations.json` exactly as the system API writes it: snake_case
- * at the file level, camelCase inside the annotation records.
- */
-export interface SavedAnnotationFile {
+/** Wire format of one captured frame. */
+export interface CapturedFrameRecord {
+  name: string;
+  path: string;
+  timestamp_ms: number;
+  width: number;
+  height: number;
+  size: number;
+}
+
+export interface SubmitResult {
   video_id: string;
+  week: string | null;
+  frames_written: number;
+  crops_written: number;
+  regions_written: number;
+  boards_without_regions: number;
+  skipped: string[];
   saved_at: string;
-  saved_by: string;
-  classes: AnnotationClass[];
-  images: SavedAnnotationImage[];
-}
-
-/**
- * Where a video sits in the two-pass flow, as reported by the system API.
- * `crops` are the images stage 2 annotates.
- */
-export interface StageState {
-  video_id: string;
-  stage: WorkflowStage;
-  board_submitted: boolean;
-  price_region_submitted: boolean;
-  crops: VideoAssetName[];
 }

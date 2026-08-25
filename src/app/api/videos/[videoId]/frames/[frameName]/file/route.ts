@@ -9,30 +9,30 @@ export const dynamic = 'force-dynamic';
 
 
 // ============================================================
-// BYTES OF ONE BOARD CROP
+// BYTES OF ONE CAPTURED FRAME
 //
-// Stage 2 draws on these, so they are streamed through the
-// session-protected server exactly like the source frames.
+// Streamed through the session-protected server exactly like
+// the source video, so no storage credential reaches the page.
 // ============================================================
 
 export async function GET(
   _request: Request,
-  context: RouteContext<'/api/videos/[videoId]/crop/[cropName]'>
+  context: RouteContext<'/api/videos/[videoId]/frames/[frameName]/file'>
 ) {
 
   try {
     await requireUserEmail();
 
-    const { videoId, cropName } = await context.params;
+    const { videoId, frameName } = await context.params;
 
     const upstream = await systemApiRaw(
       `/videos/${encodeURIComponent(videoId)}` +
-      `/crop/${encodeURIComponent(cropName)}`
+      `/frames/${encodeURIComponent(frameName)}/file`
     );
 
     if (!upstream.ok) {
       return Response.json(
-        { error: `Crop could not be read (${upstream.status}).` },
+        { error: `Frame could not be read (${upstream.status}).` },
         { status: upstream.status }
       );
     }
@@ -44,6 +44,8 @@ export async function GET(
         headers: {
           'Content-Type':
             upstream.headers.get('content-type') || 'image/png',
+          // A capture is named after its timestamp and never changes, so the
+          // same name always means the same bytes.
           'Cache-Control': 'private, max-age=3600'
         }
       }

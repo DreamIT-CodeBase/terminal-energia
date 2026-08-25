@@ -58,9 +58,7 @@ React.FC<AnnotationCanvasProps> = ({
     deleteAnnotation,
     updateAnnotationCoordinates,
     updateCanvasSettings,
-    setImageProgress,
-    setImageDimensions,
-    saveHistory
+    setImageDimensions
   } = useAnnotationStore();
 
 
@@ -80,6 +78,12 @@ React.FC<AnnotationCanvasProps> = ({
       ann =>
         ann.imageId === selectedImageId
     );
+
+
+  // Resizing a board on its frame changes the window without changing the
+  // image behind it, so the view has to refit around the new one.
+  const cropKey =
+    selectedImage?.cropBox?.join(',') ?? '';
 
 
   // ============================================================
@@ -225,16 +229,28 @@ const [
         );
       }
 
+      // A board shows only a window into its frame, so what has to fit the
+      // canvas is the window, not the whole frame behind it.
+      const crop = selectedImage.cropBox;
+
+      const shownWidth = crop
+        ? Math.max(1, Math.round(crop[2] * img.naturalWidth))
+        : img.naturalWidth;
+
+      const shownHeight = crop
+        ? Math.max(1, Math.round(crop[3] * img.naturalHeight))
+        : img.naturalHeight;
+
       // Fit the selected image into the available canvas.
       if (
         containerWidth > 0 &&
         containerHeight > 0 &&
-        img.naturalWidth > 0 &&
-        img.naturalHeight > 0
+        shownWidth > 0 &&
+        shownHeight > 0
       ) {
         const fitZoom = Math.min(
-          (containerWidth - 60) / img.naturalWidth,
-          (containerHeight - 60) / img.naturalHeight,
+          (containerWidth - 60) / shownWidth,
+          (containerHeight - 60) / shownHeight,
           1.5
         );
 
@@ -242,8 +258,8 @@ const [
 
         updateCanvasSettings({
           zoom,
-          panX: (containerWidth - img.naturalWidth * zoom) / 2,
-          panY: (containerHeight - img.naturalHeight * zoom) / 2,
+          panX: (containerWidth - shownWidth * zoom) / 2,
+          panY: (containerHeight - shownHeight * zoom) / 2,
         });
       }
     };
@@ -269,6 +285,7 @@ const [
   }, [
     selectedImage?.id,
     selectedImage?.url,
+    cropKey,
     containerWidth,
     containerHeight,
     updateCanvasSettings,
@@ -551,15 +568,21 @@ const [
     );
   }
 
-  const imgW =
-    selectedImage.width ||
-    imageElement.naturalWidth ||
-    800;
+  // What the canvas draws on. For a board this is the crop window, so every
+  // box drawn here is already normalised against the crop the dataset will
+  // eventually contain.
+  const cropBox = selectedImage.cropBox;
 
-  const imgH =
-    selectedImage.height ||
-    imageElement.naturalHeight ||
-    600;
+  const naturalWidth = imageElement.naturalWidth || 800;
+  const naturalHeight = imageElement.naturalHeight || 600;
+
+  const imgW = cropBox
+    ? Math.max(1, Math.round(cropBox[2] * naturalWidth))
+    : selectedImage.width || naturalWidth;
+
+  const imgH = cropBox
+    ? Math.max(1, Math.round(cropBox[3] * naturalHeight))
+    : selectedImage.height || naturalHeight;
 
 
   // ============================================================
@@ -871,10 +894,12 @@ const [
 
       // Existing behaviour:
       // first class is default.
+      // A crop window means this is a board being labelled for prices;
+      // the whole frame means boards are being drawn on it.
       const activeClass =
         classes.find(cls =>
           cls.id === (
-            selectedImage.workflowStage === 'price_region'
+            selectedImage.cropBox
               ? 'class-price-region'
               : 'class-board'
           )
@@ -967,10 +992,12 @@ const [
         drawingState.currentMousePos;
 
 
+      // A crop window means this is a board being labelled for prices;
+      // the whole frame means boards are being drawn on it.
       const activeClass =
         classes.find(cls =>
           cls.id === (
-            selectedImage.workflowStage === 'price_region'
+            selectedImage.cropBox
               ? 'class-price-region'
               : 'class-board'
           )
@@ -1060,12 +1087,6 @@ const [
 
           addAnnotation(
             newAnn
-          );
-
-
-          setImageProgress?.(
-            selectedImage.id,
-            'in-progress'
           );
         }
 
@@ -1184,9 +1205,6 @@ const [
           h
         ]
       );
-
-
-      saveHistory();
     };
 
 
@@ -1259,9 +1277,6 @@ const [
           h
         ]
       );
-
-
-      saveHistory();
     };
 
 
@@ -1538,6 +1553,16 @@ const [
             image={imageElement}
             width={imgW}
             height={imgH}
+            crop={
+              cropBox
+                ? {
+                    x: cropBox[0] * naturalWidth,
+                    y: cropBox[1] * naturalHeight,
+                    width: imgW,
+                    height: imgH
+                  }
+                : undefined
+            }
             name="background-image"
           />
 

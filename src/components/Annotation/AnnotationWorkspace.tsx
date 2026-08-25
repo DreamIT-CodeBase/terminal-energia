@@ -8,30 +8,31 @@ import React, {
 } from 'react';
 
 import {
-  ArrowRight,
-  CheckCircle2,
   Loader2,
   RefreshCw
 } from 'lucide-react';
 
 import { UpperToolbar } from '../Toolbar/UpperToolbar';
-import { ImageSidebar } from '../Sidebar/ImageSidebar';
-import { ReferencePanel } from '../Sidebar/ReferencePanel';
+import { LeftSidebar } from '../Sidebar/LeftSidebar';
 import { RightSidebar } from '../Sidebar/RightSidebar';
-import { VideoPlayer } from '../Video/VideoPlayer';
+import { VideoStage } from '../Video/VideoStage';
 import { DynamicCanvas } from '../Canvas/DynamicCanvas';
 import { CanvasToolbar } from '../Canvas/CanvasToolbar';
 
-import { useAnnotationStore } from '../../store/useAnnotationStore';
+import {
+  formatTimestamp,
+  useAnnotationStore
+} from '../../store/useAnnotationStore';
+
 import { readVideoMetadata } from '../../utils/videoMetadata';
 
 import {
-  Annotation,
-  ImageItem,
-  StageState,
+  CapturedFrame,
+  CapturedFrameRecord,
+  SubmitResult,
   VideoAssets,
-  VideoSummary,
-  WorkflowStage
+  VideoProbe,
+  VideoSummary
 } from '../../types';
 
 
@@ -42,13 +43,6 @@ interface AnnotationWorkspaceProps {
   // Offer every video, not just the ones still to do.
   showAllVideos?: boolean;
 }
-
-
-// The class every box gets, decided by the stage rather than by the user.
-const STAGE_CLASS_ID: Record<WorkflowStage, string> = {
-  board: 'class-board',
-  price_region: 'class-price-region'
-};
 
 
 // ============================================================
@@ -73,13 +67,16 @@ const readError = async (
 };
 
 
-/**
- * Stable image ids keyed on the blob path, so boxes restored from Azure and
- * drafts kept in the browser both keep pointing at the right image.
- */
-const imageIdFor = (
-  blobPath: string
-): string => `blob:${blobPath}`;
+const toFrame = (
+  record: CapturedFrameRecord
+): CapturedFrame => ({
+  name: record.name,
+  path: record.path,
+  timestampMs: record.timestamp_ms,
+  width: record.width,
+  height: record.height,
+  size: record.size
+});
 
 
 export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
@@ -89,15 +86,21 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 }) => {
 
   const {
-    images,
-    annotations,
     videoId,
-    stage,
+    durationMs,
+    frames,
+    boards,
+    regions,
+    selection,
+    images,
     selectedImageId,
-    loadVideoProject,
+    loadVideo,
+    clearProject,
+    setFrames,
+    setDurationMs,
+    select,
     readDraft,
-    clearDraft,
-    clearProject
+    clearDraft
   } = useAnnotationStore();
 
 
@@ -108,12 +111,15 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
   const [videos, setVideos] = useState<VideoSummary[]>([]);
   const [assets, setAssets] = useState<VideoAssets | null>(null);
   const [apiResponse, setApiResponse] = useState<unknown>(null);
+  const [fps, setFps] = useState<number | null>(null);
 
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
   const [loadError, setLoadError] = useState('');
 
+  const [isCapturing, setIsCapturing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [statusMessage, setStatusMessage] = useState('');
   // Finishing a video is worth calling out; everything else reads as neutral.
   const [statusIsSuccess, setStatusIsSuccess] = useState(false);
@@ -132,13 +138,14 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
 
   // ============================================================
-  // LOAD ONE VIDEO
+  // OPEN ONE VIDEO
   //
-  // Stage 1 annotates the extracted frames; stage 2 annotates
-  // the crops those board boxes produced.
+  // A video is the whole job: the clip, the frames already
+  // captured from it, and whatever was drawn on them but not
+  // yet submitted.
   // ============================================================
 
-  const loadVideo = useCallback(
+  const openVideo = useCallback(
     async (
       nextVideoId: string
     ) => {
@@ -147,29 +154,12 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
       setLoadError('');
       setStatusMessage('');
       setStatusIsSuccess(false);
+      setFps(null);
 
       try {
 
-        // Where this video is in the two-pass flow.
-        const stageResponse = await fetch(
-          `/api/videos/${encodeURIComponent(nextVideoId)}/stage`,
-          { cache: 'no-store' }
-        );
-
-        if (!stageResponse.ok) {
-          throw new Error(await readError(stageResponse));
-        }
-
-        const state: StageState = await stageResponse.json();
-
-        const nextStage: WorkflowStage =
-          state.stage === 'price_region'
-            ? 'price_region'
-            : 'board';
-
-
-        // Frames are fetched either way: stage 1 annotates them, and the
-        // video panel needs to know whether a video.mp4 exists.
+        // What the source container holds for this video: the clip itself,
+        // and whether there is an api_response.json worth reading.
         const assetsResponse = await fetch(
           `/api/videos/${encodeURIComponent(nextVideoId)}`,
           { cache: 'no-store' }
@@ -184,145 +174,74 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         setAssets(videoAssets);
 
 
-        // Only frames are loaded for annotation; crops and prepped images in
-        // the source container are not part of this flow.
-        const nextImages: ImageItem[] =
-          nextStage === 'price_region'
-
-            ? (state.crops ?? []).map(crop => ({
-                id: imageIdFor(crop.path),
-                name: crop.name,
-                width: 0,
-                height: 0,
-                url:
-                  `/api/videos/${encodeURIComponent(nextVideoId)}` +
-                  `/crop/${encodeURIComponent(crop.name)}`,
-                progress: 'todo' as const,
-                blobPath: crop.path,
-                workflowStage: 'price_region' as const
-              }))
-
-            : (videoAssets.folders?.frames ?? []).map(file => ({
-                id: imageIdFor(file.path),
-                name: file.name,
-                // Natural size is filled in by the canvas once it loads.
-                width: 0,
-                height: 0,
-                url:
-                  `/api/videos/${encodeURIComponent(nextVideoId)}` +
-                  `/file/frames/${encodeURIComponent(file.name)}`,
-                progress: 'todo' as const,
-                blobPath: file.path,
-                folder: 'frames' as const,
-                workflowStage: 'board' as const
-              }));
-
-
         // --------------------------------------------------
-        // BOXES ALREADY SUBMITTED FOR THIS STAGE
+        // THE CLIP
+        //
+        // A probe that fails is not fatal: the browser reports
+        // the duration once the video element has metadata.
         // --------------------------------------------------
 
-        let nextAnnotations: Annotation[] = [];
+        let probedDurationMs = 0;
 
-        const submitted =
-          nextStage === 'board'
-            ? state.board_submitted
-            : state.price_region_submitted;
+        const probeResponse = await fetch(
+          `/api/videos/${encodeURIComponent(nextVideoId)}/probe`,
+          { cache: 'no-store' }
+        );
 
-        if (submitted) {
-
-          const savedResponse = await fetch(
-            `/api/videos/${encodeURIComponent(nextVideoId)}` +
-            `/stage/${nextStage}/annotations`,
-            { cache: 'no-store' }
-          );
-
-          if (savedResponse.ok) {
-
-            const saved: {
-              images?: {
-                path: string;
-                width?: number;
-                height?: number;
-                annotations: { classId: string; coordinates: number[] }[];
-              }[];
-            } = await savedResponse.json();
-
-            const known = new Set(nextImages.map(image => image.id));
-
-            saved.images?.forEach(savedImage => {
-
-              const imageId = imageIdFor(savedImage.path);
-
-              if (!known.has(imageId)) return;
-
-              savedImage.annotations.forEach((record, index) => {
-                nextAnnotations.push({
-                  id: `${imageId}-${index}`,
-                  imageId,
-                  classId: record.classId,
-                  type: 'rect',
-                  coordinates: record.coordinates
-                });
-              });
-
-              const target = nextImages.find(image => image.id === imageId);
-
-              if (target && savedImage.annotations.length > 0) {
-                target.progress = 'done';
-                target.width = savedImage.width || 0;
-                target.height = savedImage.height || 0;
-              }
-            });
-
-          } else {
-            // The server says this stage was submitted, so a failure here
-            // means previously drawn boxes are silently missing from the
-            // canvas. Worth surfacing rather than starting from blank.
-            setLoadError(
-              'Boxes for this stage were saved but could not be loaded: ' +
-              await readError(savedResponse) +
-              ' Redrawing now would overwrite them on submit.'
-            );
-
-            return;
-          }
+        if (probeResponse.ok) {
+          const probe: VideoProbe = await probeResponse.json();
+          probedDurationMs = probe.duration_ms;
+          setFps(probe.fps);
         }
 
 
         // --------------------------------------------------
-        // LOCAL DRAFT WINS OVER WHAT IS IN STORAGE
+        // FRAMES ALREADY CAPTURED
         // --------------------------------------------------
 
-        const draft = readDraft(nextVideoId, nextStage);
+        const framesResponse = await fetch(
+          `/api/videos/${encodeURIComponent(nextVideoId)}/frames`,
+          { cache: 'no-store' }
+        );
 
-        if (draft && draft.length > 0) {
-
-          const known = new Set(nextImages.map(image => image.id));
-
-          const usable = draft.filter(
-            annotation => known.has(annotation.imageId)
-          );
-
-          if (usable.length > 0) {
-            nextAnnotations = usable;
-
-            nextImages.forEach(image => {
-              image.progress = usable.some(
-                annotation => annotation.imageId === image.id
-              )
-                ? 'in-progress'
-                : 'todo';
-            });
-          }
+        if (!framesResponse.ok) {
+          throw new Error(await readError(framesResponse));
         }
 
+        const captured: { frames?: CapturedFrameRecord[] } =
+          await framesResponse.json();
 
-        loadVideoProject(
+        const nextFrames = (captured.frames ?? []).map(toFrame);
+
+
+        // --------------------------------------------------
+        // WHAT WAS DRAWN BUT NOT SUBMITTED
+        //
+        // The frames live on the server, the boxes do not, so a
+        // draft only has to carry the boxes and their prices.
+        // --------------------------------------------------
+
+        const draft = readDraft(nextVideoId);
+
+        const known = new Set(nextFrames.map(frame => frame.name));
+
+        const nextBoards = (draft?.boards ?? []).filter(
+          board => known.has(board.frameName)
+        );
+
+        const boardIds = new Set(nextBoards.map(board => board.id));
+
+        const nextRegions = (draft?.regions ?? []).filter(
+          region => boardIds.has(region.boardId)
+        );
+
+
+        loadVideo(
           nextVideoId,
-          nextStage,
-          nextImages,
-          nextAnnotations
+          probedDurationMs,
+          nextFrames,
+          nextBoards,
+          nextRegions
         );
 
 
@@ -358,7 +277,7 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         setIsLoadingVideo(false);
       }
     },
-    [loadVideoProject, readDraft]
+    [loadVideo, readDraft]
   );
 
 
@@ -386,6 +305,7 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
             annotated: boolean;
             image_count?: number;
             completed?: boolean;
+            has_video?: boolean;
           }[];
         } = await response.json();
 
@@ -394,23 +314,22 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
             videoId: item.video_id,
             annotated: item.annotated,
             imageCount: item.image_count ?? 0,
-            completed: item.completed ?? false
+            completed: item.completed ?? false,
+            hasVideo: item.has_video ?? false
           }))
+          // Frames are captured from the clip, so a video without one is a
+          // dead end and never reaches the queue.
+          .filter(video => video.hasVideo)
           // The queue is normally work still to do, so anything already
-          // written to the annotated container drops out. While
-          // showAllVideos is set every video stays on offer, and an annotated
-          // one can be labelled again -- the dropdown marks those "(saved)".
+          // filed into a week drops out. While showAllVideos is set every
+          // video stays on offer, and a finished one can be labelled again --
+          // the dropdown marks those "(saved)".
           .filter(video => showAllVideos || !video.annotated);
 
         setVideos(summaries);
 
-        // The API returns videos newest first. Plenty hold only JSON, so open
-        // on the most recent one that actually has frames.
-        const opening =
-          summaries.find(video => video.imageCount > 0) ?? summaries[0];
-
-        if (opening) {
-          await loadVideo(opening.videoId);
+        if (summaries[0]) {
+          await openVideo(summaries[0].videoId);
         } else {
           clearProject();
         }
@@ -429,7 +348,7 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         setIsLoadingVideos(false);
       }
     },
-    [clearProject, loadVideo]
+    [clearProject, openVideo, showAllVideos]
   );
 
 
@@ -447,72 +366,34 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
 
   // ============================================================
-  // SUBMIT THE CURRENT STAGE
+  // CAPTURE FRAMES
   //
-  // Stage 1 submits the board boxes; the server crops every
-  // frame and the workspace reloads onto those crops. Stage 2
-  // submits the price regions and completes the video.
+  // The browser sends moments, not pixels. The API decodes each
+  // one from the stored clip and parks it in the working area.
   // ============================================================
 
-  const handleSubmitStage = async () => {
+  const handleCapture = async (
+    timestampsMs: number[]
+  ) => {
 
-    if (!videoId) return;
+    if (!videoId || timestampsMs.length === 0) return;
 
-    const payload = images
-      .filter(image =>
-        annotations.some(annotation => annotation.imageId === image.id)
-      )
-      .map(image => ({
-        name: image.name,
-        path: image.blobPath ?? '',
-        width: image.width,
-        height: image.height,
-        annotations: annotations
-          .filter(annotation => annotation.imageId === image.id)
-          .map(annotation => ({
-            classId: STAGE_CLASS_ID[stage],
-            type: 'rect' as const,
-            coordinates: annotation.coordinates
-          }))
-      }));
-
-    if (payload.length === 0) {
-      setStatusMessage(
-        stage === 'board'
-          ? 'Draw at least one board box before submitting.'
-          : 'Draw at least one price region before submitting.'
-      );
-      return;
-    }
-
-    const confirmed = window.confirm(
-      stage === 'board'
-        ? `Submit boards for ${payload.length} frame(s)? The frames will be ` +
-          'cropped to their board boxes, and those crops become the images ' +
-          'for the price region pass.'
-        : `Submit price regions for ${payload.length} crop(s)? ` +
-          'This completes the video.'
-    );
-
-    if (!confirmed) return;
-
-    setIsSubmitting(true);
+    setIsCapturing(true);
     setStatusIsSuccess(false);
     setStatusMessage(
-      stage === 'board'
-        ? 'Submitting boards and cropping frames...'
-        : 'Submitting price regions...'
+      timestampsMs.length === 1
+        ? `Capturing the frame at ${formatTimestamp(timestampsMs[0])}...`
+        : `Capturing ${timestampsMs.length} frames...`
     );
 
     try {
 
       const response = await fetch(
-        `/api/videos/${encodeURIComponent(videoId)}` +
-        `/stage/${stage === 'board' ? 'board' : 'price-region'}`,
+        `/api/videos/${encodeURIComponent(videoId)}/frames`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ images: payload })
+          body: JSON.stringify({ timestampsMs })
         }
       );
 
@@ -521,13 +402,182 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
       }
 
       const result: {
-        images_written: number;
-        crops: { name: string }[];
-        skipped: string[];
+        frames: CapturedFrameRecord[];
+        captured: CapturedFrameRecord[];
       } = await response.json();
 
-      // The draft has been superseded by what is now in storage.
-      clearDraft(videoId, stage);
+      setFrames(result.frames.map(toFrame));
+
+      // Land on what was just taken, so a single capture goes straight to
+      // drawing rather than back to a list.
+      const landing = result.captured[0];
+
+      if (landing) {
+        select({ kind: 'frame', frameName: landing.name });
+      }
+
+      setStatusMessage(
+        result.captured.length === 1
+          ? `Captured ${formatTimestamp(result.captured[0].timestamp_ms)}.`
+          : `Captured ${result.captured.length} frames.`
+      );
+
+    } catch (error) {
+
+      console.error('Capture error:', error);
+
+      setStatusMessage(
+        error instanceof Error
+          ? `Capture failed: ${error.message}`
+          : 'Capture failed.'
+      );
+
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+
+  // ============================================================
+  // DISCARD A FRAME
+  // ============================================================
+
+  const handleDeleteFrame = async (
+    frameName: string
+  ) => {
+
+    if (!videoId) return;
+
+    const frameBoards = boards.filter(
+      board => board.frameName === frameName
+    );
+
+    if (frameBoards.length > 0) {
+
+      const confirmed = window.confirm(
+        `Discard this frame? The ${frameBoards.length} board(s) drawn on it, ` +
+        'and their prices, go with it.'
+      );
+
+      if (!confirmed) return;
+    }
+
+    try {
+
+      const response = await fetch(
+        `/api/videos/${encodeURIComponent(videoId)}` +
+        `/frames/${encodeURIComponent(frameName)}`,
+        { method: 'DELETE' }
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      const result: { frames: CapturedFrameRecord[] } = await response.json();
+
+      setFrames(result.frames.map(toFrame));
+
+    } catch (error) {
+
+      console.error('Frame delete error:', error);
+
+      setStatusMessage(
+        error instanceof Error
+          ? `Could not discard the frame: ${error.message}`
+          : 'Could not discard the frame.'
+      );
+    }
+  };
+
+
+  // ============================================================
+  // SUBMIT THE VIDEO
+  //
+  // One request closes the video out: frames, boards, regions
+  // and prices all go together.
+  // ============================================================
+
+  const handleSubmit = async () => {
+
+    if (!videoId) return;
+
+    const payload = frames
+      .map(frame => ({
+        name: frame.name,
+        timestampMs: frame.timestampMs,
+        width: frame.width,
+        height: frame.height,
+        boards: boards
+          .filter(board => board.frameName === frame.name)
+          .map(board => ({
+            coordinates: board.coordinates,
+            regions: regions
+              .filter(region => region.boardId === board.id)
+              .map(region => ({
+                coordinates: region.coordinates,
+                // An empty field means the price could not be read, which is
+                // recorded as no price rather than as a zero.
+                price:
+                  region.price.trim() === ''
+                    ? null
+                    : Number(region.price)
+              }))
+          }))
+      }))
+      // A frame nobody drew on is not part of the dataset.
+      .filter(frame => frame.boards.length > 0);
+
+    if (payload.length === 0) {
+      setStatusMessage('Draw at least one board before submitting.');
+      return;
+    }
+
+    const emptyBoards = payload
+      .flatMap(frame => frame.boards)
+      .filter(board => board.regions.length === 0).length;
+
+    const boardCount = payload.reduce(
+      (total, frame) => total + frame.boards.length,
+      0
+    );
+
+    const confirmed = window.confirm(
+      `Submit ${payload.length} frame(s) and ${boardCount} board(s)? ` +
+      'This files the video into this week and finishes it.' +
+      (
+        emptyBoards > 0
+          ? `\n\n${emptyBoards} board(s) have no price region and will be ` +
+            'filed as background samples.'
+          : ''
+      )
+    );
+
+    if (!confirmed) return;
+
+    setIsSubmitting(true);
+    setStatusIsSuccess(false);
+    setStatusMessage('Submitting...');
+
+    try {
+
+      const response = await fetch(
+        `/api/videos/${encodeURIComponent(videoId)}/submit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frames: payload })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(await readError(response));
+      }
+
+      const result: SubmitResult = await response.json();
+
+      // Everything in the draft is now in storage.
+      clearDraft(videoId);
 
       const skippedNote =
         result.skipped.length > 0
@@ -535,35 +585,9 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
           : '';
 
 
-      if (stage === 'board') {
-
-        setVideos(current =>
-          current.map(video =>
-            video.videoId === videoId
-              ? { ...video, annotated: true }
-              : video
-          )
-        );
-
-        setStatusMessage(
-          `Saved ${result.images_written} frame(s) and produced ` +
-          `${result.crops.length} crop(s). Now label the price regions.` +
-          skippedNote
-        );
-
-        // Reload so the workspace picks up the stage the server now reports.
-        await loadVideo(videoId);
-
-        return;
-      }
-
-
-      // ----------------------------------------------------------
-      // BOTH PASSES DONE: DROP THE VIDEO AND MOVE ON
-      //
-      // The same step the Next button takes, so finishing a video
-      // continues down the queue without a manual selection.
-      // ----------------------------------------------------------
+      // --------------------------------------------------
+      // DROP THE VIDEO AND MOVE ON
+      // --------------------------------------------------
 
       const finishedIndex = videos.findIndex(
         video => video.videoId === videoId
@@ -575,38 +599,39 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
       setVideos(remaining);
 
-      // Prefer the next entry down the list (the older video, which is where
-      // Next goes); fall back to the previous one when this was the last.
+      // Prefer the next entry down the list (the older video); fall back to
+      // the previous one when this was the last.
       const following =
         finishedIndex === -1
           ? remaining[0]
           : remaining[finishedIndex] ?? remaining[finishedIndex - 1];
 
+      const summary =
+        `Filed ${result.frames_written} frame(s) and ` +
+        `${result.crops_written} board crop(s) with ` +
+        `${result.regions_written} price region(s) into ${result.week}.`;
+
       if (!following) {
         clearProject();
         setStatusIsSuccess(true);
         setStatusMessage(
-          `Saved ${result.images_written} crop(s). ` +
-          'That was the last video: everything is annotated.' +
+          `${summary} That was the last video: everything is annotated.` +
           skippedNote
         );
         return;
       }
 
-      const completionMessage =
-        `Saved ${result.images_written} crop(s). ${videoId} is complete, ` +
-        `moved on to ${following.videoId}.` +
-        skippedNote;
-
-      await loadVideo(following.videoId);
+      await openVideo(following.videoId);
 
       // Set after the load, which clears the message on its way in.
       setStatusIsSuccess(true);
-      setStatusMessage(completionMessage);
+      setStatusMessage(
+        `${summary} Moved on to ${following.videoId}.` + skippedNote
+      );
 
     } catch (error) {
 
-      console.error('Stage submit error:', error);
+      console.error('Submit error:', error);
 
       setStatusMessage(
         error instanceof Error
@@ -672,10 +697,10 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
   // are shown alongside the zoom and frame size.
   const metadata = readVideoMetadata(apiResponse);
 
+  const hasVideo = Boolean(assets?.video_path);
 
-  const annotatedCount = images.filter(image =>
-    annotations.some(annotation => annotation.imageId === image.id)
-  ).length;
+  const showingVideo = selection.kind === 'video';
+
 
   // ============================================================
   // WORKSPACE
@@ -691,49 +716,25 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         showAllVideos={showAllVideos}
         videos={videos}
         videoId={videoId}
-        onVideoChange={loadVideo}
+        onVideoChange={openVideo}
         onRefresh={loadVideos}
+        onSubmit={handleSubmit}
+        isSubmitting={isSubmitting}
       />
 
 
       <div className="flex flex-1 min-h-0 relative">
 
-        {/* LEFT COLUMN: frames on top, the source clip underneath */}
+        {/* LEFT: video, frames, boards */}
 
-        <div className="w-64 flex flex-col h-full border-r border-[#232326] shrink-0 relative">
-
-          {/* Slides out over the canvas from this pane's right edge */}
-          <ReferencePanel
-            videoId={videoId}
-            crops={assets?.folders?.crops ?? []}
-            prepped={assets?.folders?.prepped ?? []}
-          />
+        <LeftSidebar
+          hasVideo={hasVideo}
+          isCapturing={isCapturing}
+          onDeleteFrame={handleDeleteFrame}
+        />
 
 
-          <div className="flex-1 min-h-0">
-            <ImageSidebar
-              videos={videos}
-              videoId={videoId}
-              onVideoChange={loadVideo}
-            />
-          </div>
-
-          <div className="h-56 shrink-0 border-t border-[#232326] bg-[#0a0a0c] flex flex-col">
-            <div className="px-3 h-8 flex items-center shrink-0 text-[10px] uppercase font-bold tracking-wider text-zinc-500 bg-[#19191c] border-b border-[#232326]/50">
-              Source video
-            </div>
-            <div className="flex-1 min-h-0">
-              <VideoPlayer
-                videoId={videoId}
-                hasVideo={Boolean(assets?.video_path)}
-              />
-            </div>
-          </div>
-
-        </div>
-
-
-        {/* CENTER: what the boxes are drawn on */}
+        {/* CENTRE: whichever of the three is selected */}
 
         <div
           ref={containerRef}
@@ -741,63 +742,53 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         >
 
           {
-            !isLoadingVideo &&
-            images.length > 0 &&
-            selectedImageId &&
-            canvasDimensions.width > 0 &&
-            canvasDimensions.height > 0 && (
-              <DynamicCanvas
-                containerWidth={canvasDimensions.width}
-                containerHeight={canvasDimensions.height}
-                metadata={metadata}
+            !isLoadingVideo && !loadError && showingVideo && (
+              <VideoStage
+                videoId={videoId}
+                hasVideo={hasVideo}
+                durationMs={durationMs}
+                fps={fps}
+                isCapturing={isCapturing}
+                capturedTimestamps={frames.map(frame => frame.timestampMs)}
+                onCapture={handleCapture}
+                onDurationKnown={setDurationMs}
               />
             )
           }
 
-
-          {/* STAGE BANNER AND SUBMIT */}
-
           {
-            !isLoadingVideo && !loadError && images.length > 0 && (
+            !isLoadingVideo &&
+            !loadError &&
+            !showingVideo &&
+            images.length > 0 &&
+            selectedImageId &&
+            canvasDimensions.width > 0 &&
+            canvasDimensions.height > 0 && (
+              <>
+                <DynamicCanvas
+                  containerWidth={canvasDimensions.width}
+                  containerHeight={canvasDimensions.height}
+                  metadata={metadata}
+                />
 
-              <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                <CanvasToolbar />
 
-                <div className="flex items-center gap-2 px-3 py-2 rounded bg-[#141416]/95 border border-[#303036] text-xs">
-                  <span className="text-zinc-500">Stage</span>
-                  <span className="font-semibold text-zinc-100">
-                    {stage === 'board' ? '1 · Boards' : '2 · Price regions'}
+                {/* WHAT THIS VIEW IS FOR */}
+
+                <div className="absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-2 rounded bg-[#141416]/95 border border-[#303036] text-xs">
+                  <span className="text-zinc-500">
+                    {
+                      selection.kind === 'frame'
+                        ? 'Draw boards'
+                        : 'Draw price regions'
+                    }
                   </span>
                   <span className="text-zinc-600">·</span>
-                  <span className="text-zinc-400 font-mono">
-                    {annotatedCount}/{images.length}
+                  <span className="font-semibold text-zinc-100">
+                    {images[0]?.name}
                   </span>
                 </div>
-
-                <button
-                  onClick={handleSubmitStage}
-                  disabled={isSubmitting || annotations.length === 0}
-                  title={
-                    stage === 'board'
-                      ? 'Save the board boxes and crop the frames'
-                      : 'Save the price region boxes and finish this video'
-                  }
-                  className="flex items-center gap-2 px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-sm font-semibold text-white transition-colors"
-                >
-                  {
-                    isSubmitting
-                      ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : stage === 'board'
-                        ? <ArrowRight className="w-4 h-4" />
-                        : <CheckCircle2 className="w-4 h-4" />
-                  }
-                  {
-                    stage === 'board'
-                      ? 'Submit boards'
-                      : 'Submit price regions'
-                  }
-                </button>
-
-              </div>
+              </>
             )
           }
 
@@ -835,15 +826,14 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
           {/* EMPTY */}
 
           {
-            !isLoadingVideo && !loadError && images.length === 0 && (
+            !isLoadingVideo && !loadError && !showingVideo &&
+            images.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center text-zinc-500">
                 <div>
                   {
                     videos.length === 0
-                      ? 'No videos found in the debug directory container.'
-                      : stage === 'price_region'
-                        ? `No crops were produced for ${videoId}.`
-                        : `No frames in ${videoId}/frames/.`
+                      ? 'No videos with a video.mp4 in the debug directory container.'
+                      : 'Nothing selected. Pick a frame or a board on the left.'
                   }
                 </div>
                 <button
@@ -854,13 +844,6 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
                   Refresh
                 </button>
               </div>
-            )
-          }
-
-
-          {
-            !isLoadingVideo && images.length > 0 && selectedImageId && (
-              <CanvasToolbar />
             )
           }
 

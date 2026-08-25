@@ -16,15 +16,34 @@ browser  ──►  labelling-ui  ──►  system-api  ──►  Azure Blob S
 
 ## What the workspace does
 
-1. Lists every `video-id/` folder in the `debugdirectory` container.
-2. For the selected video, loads the images in `frames/`, `crops/` or
-   `prepped/`, switchable from the tabs above the image list.
-3. Shows `api_response.json` for the video in the right sidebar.
-4. Restores annotations already saved for that video, so a video can be
-   reopened and corrected. Unsaved work survives a page reload through a local
-   draft scoped to the video id.
-5. **Save to Azure** writes the annotated images and their YOLO labels to the
-   `debugdirectoryannotated` container under `video-id/`.
+Labelling runs down one video at a time, and the left sidebar is the shape of
+the job: **Video → Frames → Boards**. Selecting a section decides what the
+centre of the screen shows.
+
+1. **Video** — the source `video.mp4`, with **Capture frame** at its top right.
+   Scrub to a moment, or step a frame at a time with the arrow keys, and
+   capture. **Spread 8** takes eight evenly spaced frames as a starting set to
+   prune. Nothing is grabbed off the `<video>` element: the timestamp is sent to
+   the system API, which decodes that exact frame from the stored clip at full
+   quality and parks it in the working area.
+2. **Frames** — the frames captured so far. Opening one puts it on the canvas;
+   every box drawn on it is a price **board**.
+3. **Boards** — every board box across every frame. Opening one shows its frame
+   clipped to the board box, and every box drawn there is a **price region**.
+   The price for each region is typed in the right sidebar, one row per region.
+   Leave it empty when the price cannot be read off the board.
+
+No crop is cut while labelling. A board is its frame with a crop window applied,
+so moving or resizing a board box just re-frames the view — the real crops are
+produced once, on submit.
+
+**Submit video** files the whole thing into the current ISO week as a YOLO
+dataset and moves on to the next video. Until then, unsubmitted boxes and prices
+survive a page reload through a local draft scoped to the video id, and captured
+frames survive in the working area on the server.
+
+A video with no `video.mp4` has nothing to capture from, so it never appears in
+the queue.
 
 There is only one project, so there is no project picker or project name — the
 video id is what scopes the work.
@@ -104,11 +123,15 @@ with the service key attached.
 | Route | Purpose |
 | --- | --- |
 | `GET /api/videos` | Video ids in `debugdirectory` |
-| `GET /api/videos/[videoId]` | Images grouped by folder |
+| `GET /api/videos/[videoId]` | What the source container holds for one video |
 | `GET /api/videos/[videoId]/api-response` | `api_response.json` |
-| `GET /api/videos/[videoId]/file/[...path]` | Image bytes for the canvas |
-| `GET /api/videos/[videoId]/annotations` | Previously saved annotations |
-| `POST /api/videos/[videoId]/annotations` | Save images and YOLO labels |
+| `GET /api/videos/[videoId]/file/[...path]` | Video bytes, range requests included |
+| `GET /api/videos/[videoId]/probe` | Duration, frame size and frame rate |
+| `GET /api/videos/[videoId]/frames` | Frames captured so far |
+| `POST /api/videos/[videoId]/frames` | Capture frames at the given timestamps |
+| `GET /api/videos/[videoId]/frames/[frameName]/file` | Bytes of one captured frame |
+| `DELETE /api/videos/[videoId]/frames/[frameName]` | Discard one captured frame |
+| `POST /api/videos/[videoId]/submit` | File the video into this week |
 
 ## Docker
 
