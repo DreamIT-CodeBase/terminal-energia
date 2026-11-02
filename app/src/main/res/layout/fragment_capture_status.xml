@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CAPTURE STATUS. What the unit is pointed at, and what it is holding.
+
+  Two readouts and no video. The camera feed is deliberately absent: showing it would bind the camera
+  for as long as the screen is open, which is heat on a device whose runs have been killed by heat —
+  and it answers a different question anyway. What an operator needs here is which board the recorder
+  is committed to and how much the queue is costing, both of which are text.
+
+  Monospace blocks rather than a list widget, matching the home panel: labels padded to one column so a
+  changed value is visible without reading the labels.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ts_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBackHome"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/errors_back_home" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/capture_status_now"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+        <TextView
+            android:id="@+id/nowCapturing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+            tools:text="BOARD     : Circle K Nõmme&#10;LATITUDE  : 59.391938&#10;LONGITUDE : 24.721748&#10;TRIGGER   : geofence&#10;ROLLING   : 14s" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/capture_status_queue"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label" />
+
+        <TextView
+            android:id="@+id/queueSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+            tools:text="VIDEOS    : 10&#10;ON DISK   : 1.74 GB&#10;WAITING   : 9&#10;PROCESSING: 1" />
+
+        <!--
+          The rows scroll with the page rather than in their own container. A queue deep enough to need
+          its own scroller is a queue that is already a problem, and the summary above says so.
+        -->
+        <TextView
+            android:id="@+id/queueRows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+            tools:text="#9  Capture 08:20:40   QUEUED    81 MB  geofence" />
+
+    </LinearLayout>
+</ScrollView>

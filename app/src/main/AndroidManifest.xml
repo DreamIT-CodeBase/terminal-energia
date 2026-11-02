@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Rear-camera capture: record a short clip that the price-board pipeline processes.
+         Video-only capture (no audio track), so RECORD_AUDIO is intentionally not requested. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="true" />
+
+    <!-- Real GPS fix stamped onto each uploaded reading + discarded-frame record. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- STAGE 0's location trigger runs with no screen open. From Android 10 the foreground grant
+         stops delivering updates once the app is not visible, so without this the service stays alive
+         and simply goes blind — the truck drives past every forecourt and records nothing. It is a
+         separate user grant ("Allow all the time"), not implied by the two above. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Cadenced/connectivity-triggered background upload of the local queues to the APIs. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- FleetService runs unattended: the service keeps the process alive, and the wake lock keeps
+         the CPU running while the pipeline is inside native code with the screen off. dataSync is NOT
+         declared — nothing takes that type, and on Android 15 it is capped at 6 hours a day. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- FleetService records with the screen off. From API 34 a foreground service may only touch the
+         camera if it declares the camera type, and may only TAKE that type if it was started from the
+         foreground, which is why FleetService holds location alone from startup and promotes to
+         location|camera when a capture fires. It never takes dataSync — see the service element. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- The location trigger is always running, so the service holds the location type from startup
+         rather than promoting into it the way it does for the camera. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The unit is permanently mains-powered in a vehicle, so battery saving buys nothing and costs
+         everything: Doze and App Standby throttle the location updates the trigger depends on, defer
+         WorkManager jobs past their window, and give the system another reason to reclaim the process.
+         A normal permission — declaring it only allows the app to OPEN the exemption dialog; the user
+         still has to accept it. See AppSetup.isIgnoringBatteryOptimizations. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- "Display over other apps". Not used to draw anything — it is the documented exemption from the
+         background-activity-start restriction, which is what lets the app put itself back on screen
+         after a reboot or a process kill. That matters because a foreground service started with no
+         screen showing can never take the camera (see FleetService.promoteToCameraType): the fix is to
+         raise the UI first and start the service from it. A special permission — granted from a
+         settings screen, never a dialog. See AppSetup.canDrawOverlays. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The watchdog's +5s respawn after a crash (see Watchdog.kt). Exactness matters only on that
+         path: the dead-man backstop is deliberately inexact and needs no permission. From Android 12
+         this is checked with AlarmManager.canScheduleExactAlarms() at the call site, and a refusal
+         falls back to an inexact alarm rather than scheduling nothing — the app still comes back, just
+         later, and the delay is reported on the errors screen. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Validation results are written to /sdcard so they outlive the app that produced them: the next
+         thing done after reading them is installing a different build. Dev-only, granted over adb
+         (`appops set com.terminalscout.app.prod MANAGE_EXTERNAL_STORAGE allow`); without it the run
+         still works and falls back to app storage. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
+    <application
+        android:name=".App"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TerminalScout"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TerminalScout">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- STAGE 0 + the pipeline. Owns capture and processing so neither depends on a screen being
+             open beyond what the camera rule forces (see KioskMode).
+
+             camera|location, and deliberately NOT dataSync. On Android 15 a dataSync service is capped
+             at 6 hours in any 24 and is then killed with a fatal RemoteServiceException, which would be
+             a daily outage for a unit meant to run all day. Nothing here needs the type: every network
+             transfer in this app is done by a WorkManager worker (UploadWorker, DebugUploadWorker,
+             LocationMapRefreshWorker, AzureMapsRefreshWorker), which is not a foreground service and is
+             unaffected by these types. The pipeline is local CPU work, which needs no type at all.
+
+             location is held from startup, because the trigger reads location continuously. camera is
+             added only when a capture actually fires (see FleetService.promoteToCameraType).
+
+             NOTE: on Android 15 neither camera nor location may be launched from a BOOT_COMPLETED
+             receiver, so the app must be opened by hand after a reboot. Once open it holds itself
+             there — see KioskMode.
+
+             Exported so a capture can be triggered over adb with no screen involved. The adb invocation
+             is written out in FleetService's companion object (an XML comment cannot carry a double
+             dash, so it cannot hold a command line). -->
+        <service
+            android:name=".service.FleetService"
+            android:exported="true"
+            android:foregroundServiceType="camera|location" />
+
+        <!-- The watchdog alarm's target. Not exported: only this app's own AlarmManager entry fires it,
+             and an exported receiver would let anything on the device force the app to the front.
+             A manifest receiver rather than a registered one on purpose — the process it has to wake is
+             usually dead, and a runtime-registered receiver dies with it. -->
+        <receiver
+            android:name=".WatchdogReceiver"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HomeFragment is the start destination. VehicleFormFragment used to be, which meant a provisioned unit
+  reopened onto a form it had already filled in. Home now answers "what do I do with this thing", and
+  the form is one of the four answers.
+-->
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/HomeFragment">
+
+    <fragment
+        android:id="@+id/HomeFragment"
+        android:name="com.terminalscout.app.prod.HomeFragment"
+        android:label="@string/app_name"
+        tools:layout="@layout/fragment_home" />
+
+    <fragment
+        android:id="@+id/MenuFragment"
+        android:name="com.terminalscout.app.prod.MenuFragment"
+        android:label="@string/menu_label"
+        tools:layout="@layout/fragment_menu" />
+
+    <fragment
+        android:id="@+id/CaptureStatusFragment"
+        android:name="com.terminalscout.app.prod.CaptureStatusFragment"
+        android:label="@string/capture_status_label"
+        tools:layout="@layout/fragment_capture_status" />
+
+    <fragment
+        android:id="@+id/ErrorsFragment"
+        android:name="com.terminalscout.app.prod.ErrorsFragment"
+        android:label="@string/errors_label"
+        tools:layout="@layout/fragment_errors" />
+
+    <fragment
+        android:id="@+id/VehicleFormFragment"
+        android:name="com.terminalscout.app.prod.VehicleFormFragment"
+        android:label="@string/vehicle_form_label"
+        tools:layout="@layout/fragment_vehicle_form" />
+
+</navigation>

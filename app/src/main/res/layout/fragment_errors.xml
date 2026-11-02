@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The error log, full screen. Carries the same red-on-dark treatment the hovering banner used, because
+  it is the same information and a colour change would read as a different kind of message.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ts_bg"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnBackHome"
+        style="@style/Widget.TerminalScout.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/errors_back_home" />
+
+    <TextView
+        android:id="@+id/errorsBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@color/ts_surface_alt"
+        android:padding="12dp"
+        android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+        android:textColor="@color/ts_red"
+        tools:text="3 PROBLEMS" />
+
+    <!-- Shown instead of the list when nothing is wrong, so an empty screen is never ambiguous. -->
+    <TextView
+        android:id="@+id/errorsEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:background="@color/ts_surface"
+        android:padding="24dp"
+        android:text="@string/errors_none"
+        android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+        android:textColor="@color/ts_green"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    <TextView
+        android:id="@+id/errorsHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/errors_hint"
+        android:textAppearance="@style/TextAppearance.TerminalScout.Label" />
+
+    <!--
+      colorErrorContainer, matching the old banner exactly. The rows inherit colorOnErrorContainer for
+      their text, so the whole block reads as one red panel rather than red rows on a grey field.
+    -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/errorsList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:background="?attr/colorErrorContainer"
+        android:fadeScrollbars="false"
+        android:scrollbarThumbVertical="@color/ts_red"
+        android:scrollbars="vertical"
+        tools:itemCount="4"
+        tools:listitem="@layout/item_app_error" />
+
+</LinearLayout>

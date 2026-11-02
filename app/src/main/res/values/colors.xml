@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Brutal industrial palette. Deliberately not pretty: this is a panel bolted in a vehicle, read at a
+  glance in bad light by someone who is not enjoying it. High contrast, no gradients, no soft tints.
+  Two accents only — amber for "act" and red for "stop" — because a third would start to look designed.
+-->
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Structure. Near-black, one step of grey between surfaces so borders do the separating. -->
+    <color name="ts_bg">#FF101214</color>
+    <color name="ts_surface">#FF1A1D21</color>
+    <color name="ts_surface_alt">#FF23272C</color>
+    <color name="ts_border">#FF4A5158</color>
+    <color name="ts_border_strong">#FF7A848C</color>
+
+    <!-- Text. Plain white is too bright on a dark panel at night; this is the readable step down. -->
+    <color name="ts_text">#FFE6E8EA</color>
+    <color name="ts_text_dim">#FF98A0A8</color>
+
+    <!-- Safety amber: the primary action colour, the one thing allowed to be loud. -->
+    <color name="ts_amber">#FFFFB300</color>
+    <color name="ts_amber_dark">#FF3A2E00</color>
+
+    <!-- Stop red. Only ever on destructive actions, never decoration. -->
+    <color name="ts_red">#FFD93025</color>
+    <color name="ts_red_dark">#FF3A100D</color>
+
+    <color name="ts_green">#FF3DA35D</color>
+</resources>

@@ -1,0 +1,274 @@
+{
+  "config_id": "default",
+  "schema_version": 2,
+  "updated_at": "2026-10-05",
+  "etag": "expected-2026-10-05",
+  "last_modified": "2026-10-05T00:00:00+00:00",
+  "config": {
+    "schema_version": 2,
+    "config_id": "default",
+    "device_id": "default",
+    "vehicle_id": null,
+    "updated_at": "2026-10-05",
+    "baseline_app_version_code": 10,
+    "setup": {
+      "models": {
+        "download_max_continuations": 24
+      },
+      "device_api": {
+        "token_refresh_margin_ms": 300000
+      },
+      "station_map_sweep": {
+        "refresh_hour": 2,
+        "stale_after_ms": 86400000,
+        "azure_page_limit": 100,
+        "azure_tile_radius_m": 45000
+      },
+      "azure_maps_store": {
+        "refresh_hour": 3,
+        "failed_retry_ms": 900000,
+        "timezone_timeout_s": 30
+      }
+    },
+    "capture": {
+      "trigger": {
+        "enter_radius_m": 80,
+        "exit_radius_m": 130,
+        "update_interval_ms": 1500,
+        "min_update_distance_m": 25
+      },
+      "capture_lane": {
+        "max_clip_ms": 25000,
+        "min_free_storage_mb": 6000,
+        "camera_start_timeout_ms": 8000
+      },
+      "service": {
+        "wake_lock_ms": 3600000,
+        "wake_lock_renew_ms": 900000,
+        "event_buffer": 16
+      },
+      "watchdog": {
+        "respawn_delay_ms": 5000,
+        "max_attempts": 10,
+        "stable_window_ms": 600000,
+        "dead_man_ms": 180000,
+        "dead_man_renew_ms": 60000
+      },
+      "processing_lane": {
+        "poll_interval_ms": 5000,
+        "post_clip_delay_ms": 10000,
+        "stall_after_ms": 3600000,
+        "offline_wait_max_ms": 300000,
+        "failure_alarm_at": 3,
+        "event_buffer": 16
+      }
+    },
+    "extraction": {
+      "samples_per_second": 15,
+      "min_free_to_start_mb": 3000,
+      "min_free_reserve_mb": 1000,
+      "space_check_every_frames": 60,
+      "max_consecutive_frame_failures": 30,
+      "frame_jpeg_quality": 90,
+      "sideways_fix_degrees": -90
+    },
+    "detection": {
+      "detector": {
+        "conf_thres": 0.38,
+        "conf_cliff": 0.65,
+        "model_max_conf": 0.86,
+        "fallback_conf": 0.2,
+        "nopass_conf": 0.01,
+        "candidate_confidence_threshold": 0.05,
+        "iou_threshold": 0.45,
+        "max_det": 300,
+        "max_area_frac": 0.15,
+        "min_boards": 15,
+        "refine_fps_start": 20,
+        "refine_fps_step": 2,
+        "refine_fps_max": 30,
+        "refine_window_us": 2000000
+      },
+      "tracker": {
+        "sig_bins_h": 8,
+        "sig_bins_s": 8,
+        "sig_crop_px": 32,
+        "w_iou": 0.4,
+        "w_centroid": 0.2,
+        "w_sig": 0.3,
+        "w_aspect": 0.1,
+        "assoc_gate": 0.55,
+        "active_gap_us": 1000000,
+        "dormant_gap_us": 8000000,
+        "revive_gate": 0.3,
+        "merge_sig_dist": 0.18,
+        "merge_aspect_log": 0.35,
+        "weak_track_dets": 3,
+        "dedupe_iou": 0.45
+      },
+      "clarity_gate": {
+        "min_dimension_px": 32,
+        "sharpness_ref": 150,
+        "sharpness_hard_min": 60,
+        "contrast_ref": 60,
+        "score_threshold": 0.5,
+        "sharpness_weight": 0.6,
+        "contrast_weight": 0.4
+      }
+    },
+    "board_prep": {
+      "image_prep": {
+        "clahe_clip": 1.2,
+        "clahe_tile": 8,
+        "sharpen_sigma": 1.5,
+        "sharpen_amount": 1.5,
+        "net_pad": 114,
+        "price_zoom_enabled": true,
+        "zoom_margin_frac": 0.1,
+        "min_zoom_px": 24,
+        "zoom_min_trim": 0.98,
+        "zoom_min_gain": 1.02,
+        "ghost_black_point": 0.6,
+        "ghost_gamma": 0.7,
+        "region_conf_threshold": 0.25,
+        "region_iou_threshold": 0.3,
+        "region_max_det": 300,
+        "min_regions": 2,
+        "conf_escalation": [
+          0.08,
+          0.01
+        ],
+        "max_regions": 7,
+        "max_boards_forward": 14,
+        "conf_bucket": 0.05,
+        "max_area_frac": 0.12,
+        "min_region_side_px": 30,
+        "min_area_frac": 0.008,
+        "guard_pitch_frac": 0.5,
+        "history_frames": 5,
+        "column_gap_frac": 0.6,
+        "column_tol_frac": 0.5,
+        "mint_cost_factor": 1.5,
+        "tie_eps": 0.001,
+        "shift_min_support": 3,
+        "shift_max_pitches": 1,
+        "shift_tol_frac": 0.35,
+        "min_scale": 0.5,
+        "max_scale": 2,
+        "scale_min_boxes": 3,
+        "shift_accept_ties": true,
+        "board_min_sightings": 3,
+        "board_min_sighting_frac": 0.15,
+        "board_merge_overlap": 0.5,
+        "llm_audit_enabled": true,
+        "llm_layout_enabled": true,
+        "hershey_to_text_size": 31,
+        "label_min_text_px": 26
+      },
+      "shift_window": {
+        "neutral_grey": 114,
+        "shift_frac": 0.45,
+        "shift_pad_frac": 0.25
+      },
+      "night_filter": {
+        "gamma": 3,
+        "log_scale": 30,
+        "sharpen_kernel": 5,
+        "sharpen_sigma": 2,
+        "sharpen_strength": 0.6,
+        "sharpen_amount": 1.6,
+        "otsu_black_point": 0.6,
+        "otsu_gamma": 1,
+        "erode_kernel": 3,
+        "erode_iters": 2,
+        "dilate_kernel": 3,
+        "dilate_iters": 1,
+        "morph_open": false,
+        "clip_floor": 249
+      },
+      "day_night": {
+        "lead_ms": 1800000
+      },
+      "step_f_board_audit": {
+        "reasoning_allowance": 20000,
+        "tokens_base": 2000,
+        "tokens_per_frame": 120,
+        "timeout_s": 1200,
+        "min_regions_expected": 2
+      },
+      "step_g_board_layout": {
+        "frames": 3,
+        "jpeg_quality": 90,
+        "reasoning_allowance": 20000,
+        "tokens_base": 2000,
+        "tokens_per_frame": 300,
+        "timeout_s": 1200
+      }
+    },
+    "ocr": {
+      "run": {
+        "max_boards": 3,
+        "ocr_frames": 14,
+        "preview_min_px": 480,
+        "station_refresh_timeout_ms": 8000,
+        "batch_size": 5
+      },
+      "cloud_ocr": {
+        "max_completion_tokens": 20000,
+        "timeout_s": 1200,
+        "request_attempts": 2,
+        "retry_delay_ms": 5000
+      },
+      "luna_ocr": {
+        "reasoning_allowance": 50000,
+        "timeout_s": 1200,
+        "request_attempts": 2,
+        "retry_wait_ms": 5000
+      },
+      "batch_ocr": {
+        "tokens_base": 2000,
+        "tokens_per_image": 500
+      }
+    },
+    "consensus": {
+      "min_repeats": 2,
+      "min_agreement": 0.5,
+      "price_digits": 4
+    },
+    "upload": {
+      "enrichment": {
+        "station_lookup_enabled": false,
+        "max_match_meters": 500
+      },
+      "upload": {
+        "queue_max_attempts": 8
+      }
+    },
+    "diagnostics": {
+      "debug_upload": {
+        "max_attempts": 3,
+        "retry_backoff_ms": [
+          500,
+          1500
+        ],
+        "await_idle_ms": 60000,
+        "opt_out_ttl_ms": 604800000,
+        "stale_partial_ms": 3600000
+      },
+      "failure_log": {
+        "max_lines": 600,
+        "max_chars": 262144,
+        "timeout_s": 10
+      },
+      "run_output_store": {
+        "max_runs": 10,
+        "frames_per_run": 5,
+        "thumb_max_px": 320,
+        "thumb_quality": 80
+      },
+      "readout": {
+        "poll_ms": 2000
+      }
+    }
+  }
+}

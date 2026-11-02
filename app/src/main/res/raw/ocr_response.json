@@ -1,0 +1,92 @@
+{
+  "source": "PriceBoardPipeline · Stage 4 OCR (Gemma 4 E2B)",
+  "video_id": "73a54e1e-4a0b-4127-abf2-651fff18c4a2",
+  "board_count": 3,
+  "boards": {
+    "1": {
+      "detection_id": 59000,
+      "frame_index": 59,
+      "slug": "f00059_d00",
+      "timestamp_us": 9833294,
+      "prepped_image": "prepped_f00059_d00.png",
+      "region_count": 2,
+      "regions": {
+        "1": {
+          "box": "A",
+          "bbox": {
+            "x1": 179,
+            "y1": 215,
+            "x2": 462,
+            "y2": 365
+          },
+          "digits": "1784",
+          "region_confidence": 0.792
+        },
+        "2": {
+          "box": "B",
+          "bbox": {
+            "x1": 198,
+            "y1": 413,
+            "x2": 464,
+            "y2": 561
+          },
+          "digits": "1829",
+          "region_confidence": 0.553
+        }
+      }
+    },
+    "2": {
+      "detection_id": 62000,
+      "frame_index": 62,
+      "slug": "f00062_d00",
+      "timestamp_us": 10333292,
+      "prepped_image": "prepped_f00062_d00.png",
+      "region_count": 2,
+      "regions": {
+        "1": {
+          "box": "C",
+          "bbox": {
+            "x1": 218,
+            "y1": 165,
+            "x2": 429,
+            "y2": 277
+          },
+          "digits": "1784",
+          "region_confidence": 0.739
+        },
+        "2": {
+          "box": "D",
+          "bbox": {
+            "x1": 197,
+            "y1": 327,
+            "x2": 435,
+            "y2": 443
+          },
+          "digits": "1829",
+          "region_confidence": 0.66
+        }
+      }
+    },
+    "3": {
+      "detection_id": 71000,
+      "frame_index": 71,
+      "slug": "f00071_d00",
+      "timestamp_us": 11833286,
+      "prepped_image": "prepped_f00071_d00.png",
+      "region_count": 1,
+      "regions": {
+        "1": {
+          "box": "C",
+          "bbox": {
+            "x1": 192,
+            "y1": 159,
+            "x2": 453,
+            "y2": 259
+          },
+          "digits": "1784",
+          "region_confidence": 0.357
+        }
+      }
+    }
+  }
+}

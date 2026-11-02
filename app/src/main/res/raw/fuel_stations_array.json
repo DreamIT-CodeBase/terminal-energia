@@ -1,0 +1,414 @@
+[
+  {
+    "name": "Tartu Kvissentali Olerex",
+    "latitude": 58.39867,
+    "longitude": 26.70944,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Tartu Kvissentali Circle K",
+    "latitude": 58.40682,
+    "longitude": 26.70912,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "LPG",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Tartu Narva mnt Neste",
+    "latitude": 58.38452,
+    "longitude": 26.72675,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Põltsamaa Krooning",
+    "latitude": 58.66381,
+    "longitude": 25.96883,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Puhu risti Olerex",
+    "latitude": 58.6637,
+    "longitude": 25.98864,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Puhu risti Alexela",
+    "latitude": 58.66321,
+    "longitude": 25.99076,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Tartu Karlova automaat Circle K",
+    "latitude": 58.36129,
+    "longitude": 26.74065,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Tammsaare Olerex",
+    "latitude": 59.40193,
+    "longitude": 24.70994,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Mustamäe Circle K",
+    "latitude": 59.40852,
+    "longitude": 24.68631,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Tammsaare Circle K",
+    "latitude": 59.4057,
+    "longitude": 24.70005,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Mustamäe tee Neste",
+    "latitude": 59.41879,
+    "longitude": 24.69372,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Tartu Ringtee Alexela",
+    "latitude": 58.34233,
+    "longitude": 26.7248,
+    "fuel_sequence": [
+      "CNG"
+    ]
+  },
+  {
+    "name": "Tartu Ringtee GoOil",
+    "latitude": 58.34294,
+    "longitude": 26.72066,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Tartu Ringtee Olerex",
+    "latitude": 58.34323,
+    "longitude": 26.73728,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG",
+      "CNG"
+    ]
+  },
+  {
+    "name": "Tartu Ringtee Neste",
+    "latitude": 58.37529,
+    "longitude": 26.67856,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "MYD"
+    ]
+  },
+  {
+    "name": "Tartu Ringtee Circle K",
+    "latitude": 58.34289,
+    "longitude": 26.71475,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Tartu Lõunakeskuse Alexela",
+    "latitude": 58.35756,
+    "longitude": 26.68058,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG",
+      "CNG"
+    ]
+  },
+  {
+    "name": "Tartu Lõunakeskuse Circle K",
+    "latitude": 58.3604,
+    "longitude": 26.67731,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Tartu Lõunakeskuse Neste",
+    "latitude": 58.3619,
+    "longitude": 26.67555,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Tartu FI Olerex",
+    "latitude": 58.354,
+    "longitude": 26.68605,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Põltsamaa Jetoil",
+    "latitude": 58.65152,
+    "longitude": 25.97551,
+    "fuel_sequence": [],
+    "note": "fuel sequence not found in source"
+  },
+  {
+    "name": "Laki Olerex",
+    "latitude": 59.41001,
+    "longitude": 24.67565,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Tõrva Alexela",
+    "latitude": 58.00608,
+    "longitude": 25.91562,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Tõrva Circle K",
+    "latitude": 57.99818,
+    "longitude": 25.93178,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Tõrva Olerex",
+    "latitude": 57.99061,
+    "longitude": 25.94002,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ],
+    "note": "terminal"
+  },
+  {
+    "name": "Laeva Alexela",
+    "latitude": 58.47149,
+    "longitude": 26.3605,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Järvakandi HEPA",
+    "latitude": 58.78341,
+    "longitude": 24.81866,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Põltsamaa Olerex",
+    "latitude": 58.66371,
+    "longitude": 25.98863,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Põltsamaa Alexela",
+    "latitude": 58.66322,
+    "longitude": 25.99076,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Valga Olerex",
+    "latitude": 57.79029,
+    "longitude": 26.04936,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Sütiste Circle K",
+    "latitude": 59.40081,
+    "longitude": 24.69578,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Tondi Olerex",
+    "latitude": 59.41478,
+    "longitude": 24.73848,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Haage Olerex",
+    "latitude": 58.35641,
+    "longitude": 26.6208,
+    "fuel_sequence": [
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Adavere Circle K",
+    "latitude": 58.70929,
+    "longitude": 25.89643,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "ADBLUE"
+    ]
+  },
+  {
+    "name": "Peetri Neste",
+    "latitude": 59.40168,
+    "longitude": 24.81216,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "MYD"
+    ]
+  },
+  {
+    "name": "Peetri Olerex",
+    "latitude": 59.40059,
+    "longitude": 24.81606,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "ECOFORCE",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Tikupoiss",
+    "latitude": 58.74568,
+    "longitude": 25.76755,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D",
+      "LPG"
+    ]
+  },
+  {
+    "name": "Räpina Olerex",
+    "latitude": 58.10161,
+    "longitude": 27.45812,
+    "fuel_sequence": [
+      "98",
+      "95",
+      "D"
+    ]
+  },
+  {
+    "name": "Ahja Olerex",
+    "latitude": 58.20883,
+    "longitude": 27.07475,
+    "fuel_sequence": [],
+    "note": "fuel sequence not found in source"
+  },
+  {
+    "name": "Tartu Ropka Neste",
+    "latitude": 58.34291,
+    "longitude": 26.71574,
+    "fuel_sequence": [
+      "95",
+      "98",
+      "D"
+    ]
+  },
+  {
+    "name": "Peetri Circle K",
+    "latitude": 59.40391,
+    "longitude": 24.80962,
+    "fuel_sequence": [
+      "95",
+      "D",
+      "ADBLUE"
+    ]
+  }
+]

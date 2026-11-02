@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The same actions as the toolbar overflow, as slabs. The overflow stays for a desk tester; this exists
+  because an overflow menu is unusable with gloves on, and unreachable at all once the app is pinned.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/ts_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/menu_banner"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCaptureStatus"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/action_capture_status" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnUploadResults"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/action_upload_results" />
+
+        <!--
+          The overnight refreshes, forceable by hand, plus the tunables document.
+          Two readouts, deliberately short: the day/night boundary Stage 3 branches on, and how many
+          stations the trigger can fire at. Provenance for both — when they were fetched, which
+          coordinate, which config document — was here and was cut on 2026-09-18: it is in the log and
+          in the run's artifacts, and on a panel read at a glance it buried the two numbers that matter.
+        -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/menu_data_banner"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+        <TextView
+            android:id="@+id/txtSunTimes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+            android:textColor="@color/ts_text"
+            tools:text="SUNRISE 06:58  ·  SUNSET 19:42" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRefreshSunTimes"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_refresh_sun_times" />
+
+        <TextView
+            android:id="@+id/txtStationMap"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="4dp"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Readout"
+            android:textColor="@color/ts_text_dim"
+            tools:text="STATION MAP: 349 station(s) — swept 2026-09-18 02:00" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRefreshMap"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/action_refresh_map" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnRefreshConfig"
+            style="@style/Widget.TerminalScout.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/action_refresh_config" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/menu_filter_banner"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+        <!--
+          Checkboxes rather than buttons: these report a STATE that persists across restarts, and a
+          button says what it does without ever saying where it currently is. Mutual exclusion and the
+          both-off AUTO case are enforced in code, not here, so there is one source of truth.
+
+          `saveEnabled="false"` is load-bearing, not tidying. A CompoundButton saves its own checked
+          state and restores it after onViewCreated — by which time the listener is attached — so the
+          restore fires onCheckedChanged and writes the view's remembered value back over the stored
+          one. With the fragment being rebuilt repeatedly that became a write loop: 30 writes in 15
+          seconds, flip-flopping between DAY, NIGHT and AUTO, with nobody touching the device. The file
+          is the single source of truth; the view must not carry a second copy of it.
+        -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/chkDayFilter"
+            android:saveEnabled="false"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:minHeight="56dp"
+            android:padding="12dp"
+            android:text="@string/filter_day"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/chkNightFilter"
+            android:saveEnabled="false"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
+            android:padding="12dp"
+            android:text="@string/filter_night"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_amber" />
+
+        <TextView
+            android:id="@+id/txtFilterStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="4dp"
+            tools:text="AUTO — each capture is decided from its own time." />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="@color/ts_surface_alt"
+            android:padding="12dp"
+            android:text="@string/menu_danger_banner"
+            android:textAppearance="@style/TextAppearance.TerminalScout.Label"
+            android:textColor="@color/ts_red" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCleanMemory"
+            style="@style/Widget.TerminalScout.Button.Danger"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/action_clean_memory" />
+
+    </LinearLayout>
+</ScrollView>

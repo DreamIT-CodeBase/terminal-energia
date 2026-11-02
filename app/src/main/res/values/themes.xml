@@ -1,0 +1,94 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Brutal industrial. Square corners everywhere, thick visible borders, monospace, zero elevation.
+      The rules, so later edits do not soften it by accident:
+        - cornerRadius is ALWAYS 0. Nothing is rounded.
+        - Elevation is 0. Separation comes from borders, not shadows.
+        - Buttons are blocky, uppercase and wide-tracked, sized to be hit without looking.
+        - One accent (amber) for act, one (red) for destroy. Nothing else is coloured.
+    -->
+    <style name="Base.Theme.TerminalScout" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ts_amber</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorPrimaryContainer">@color/ts_amber_dark</item>
+        <item name="colorOnPrimaryContainer">@color/ts_amber</item>
+
+        <item name="colorError">@color/ts_red</item>
+        <item name="colorOnError">@color/white</item>
+        <item name="colorErrorContainer">@color/ts_red_dark</item>
+        <item name="colorOnErrorContainer">@color/ts_text</item>
+
+        <item name="android:colorBackground">@color/ts_bg</item>
+        <item name="colorSurface">@color/ts_surface</item>
+        <item name="colorSurfaceVariant">@color/ts_surface_alt</item>
+        <item name="colorOnSurface">@color/ts_text</item>
+        <item name="colorOnSurfaceVariant">@color/ts_text_dim</item>
+        <item name="colorOutline">@color/ts_border</item>
+
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:navigationBarColor">@color/black</item>
+
+        <item name="materialButtonStyle">@style/Widget.TerminalScout.Button</item>
+        <item name="toolbarStyle">@style/Widget.TerminalScout.Toolbar</item>
+        <item name="android:fontFamily">monospace</item>
+    </style>
+
+    <style name="Theme.TerminalScout" parent="Base.Theme.TerminalScout" />
+
+    <style name="Widget.TerminalScout.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@color/ts_surface_alt</item>
+        <item name="titleTextColor">@color/ts_amber</item>
+        <item name="subtitleTextColor">@color/ts_text_dim</item>
+        <item name="android:elevation">0dp</item>
+    </style>
+
+    <!-- The default: a slab with a hard border. Big, because it is pressed in a moving vehicle. -->
+    <style name="Widget.TerminalScout.Button" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">0dp</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="strokeColor">@color/ts_border_strong</item>
+        <item name="backgroundTint">@color/ts_surface_alt</item>
+        <item name="android:textColor">@color/ts_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:minHeight">72dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:elevation">0dp</item>
+        <item name="elevation">0dp</item>
+        <item name="rippleColor">@color/ts_border</item>
+    </style>
+
+    <!-- The one action the operator is meant to reach for. -->
+    <style name="Widget.TerminalScout.Button.Primary">
+        <item name="strokeColor">@color/ts_amber</item>
+        <item name="backgroundTint">@color/ts_amber_dark</item>
+        <item name="android:textColor">@color/ts_amber</item>
+        <item name="strokeWidth">3dp</item>
+    </style>
+
+    <!-- Destructive. Red is never used for anything else, so this reads without being read. -->
+    <style name="Widget.TerminalScout.Button.Danger">
+        <item name="strokeColor">@color/ts_red</item>
+        <item name="backgroundTint">@color/ts_red_dark</item>
+        <item name="android:textColor">@color/ts_red</item>
+        <item name="strokeWidth">3dp</item>
+    </style>
+
+    <style name="TextAppearance.TerminalScout.Label" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/ts_text_dim</item>
+        <item name="android:letterSpacing">0.18</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="TextAppearance.TerminalScout.Readout" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/ts_text</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+</resources>

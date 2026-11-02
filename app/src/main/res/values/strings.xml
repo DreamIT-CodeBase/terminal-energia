@@ -1,0 +1,88 @@
+<resources>
+    <string name="app_name">Terminal Scout Prod</string>
+    <string name="action_clean_memory">Clean memory</string>
+    <string name="action_upload_results">Upload results</string>
+    <string name="vehicle_form_label">DEVICE INFO</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="home_banner">TERMINAL SCOUT · FIELD UNIT</string>
+    <string name="home_setup_device">SETUP DEVICE INFO</string>
+    <string name="home_enter_kiosk">ENTER KIOSK MODE</string>
+    <string name="home_exit_kiosk">EXIT KIOSK MODE</string>
+    <string name="home_open_menu">OPEN MENU</string>
+    <string name="home_exit_device">EXIT DEVICE</string>
+    <string name="menu_label">MENU</string>
+    <string name="menu_banner">TOOLS</string>
+    <string name="menu_danger_banner">DESTRUCTIVE</string>
+    <string name="home_view_errors">VIEW ERRORS</string>
+    <string name="errors_label">ERRORS</string>
+    <string name="errors_none">NO PROBLEMS. EVERYTHING STAGE 0 NEEDS IS IN PLACE.</string>
+    <string name="capture_status_label">CAPTURE STATUS</string>
+    <string name="action_capture_status">Capture status</string>
+    <!--
+      The image-filter override. Two mutually exclusive checkboxes; both off is AUTO and is the default.
+      The status line is not decoration: two unticked boxes look the same as a screen nobody has set up,
+      and here that IS the automatic state, so it has to be said in words rather than implied.
+    -->
+    <string name="filter_day">DAY FILTER</string>
+    <string name="filter_night">NIGHT FILTER</string>
+    <string name="filter_status_auto">ACTIVE FILTER: AUTO</string>
+    <string name="filter_status_day">ACTIVE FILTER: DAY</string>
+    <string name="filter_status_night">ACTIVE FILTER: NIGHT</string>
+    <string name="menu_filter_banner">IMAGE PROCESSING</string>
+    <!--
+      The station map and the sun times: the two pieces of reference data the app refreshes overnight
+      (02:00 and 03:00 Tallinn) and the only two a field tester ever needs to force by hand. The readouts
+      above each button say what is currently held, because a refresh button that reports nothing leaves
+      "it worked" and "it failed silently" looking identical.
+    -->
+    <string name="menu_data_banner">REFERENCE DATA</string>
+    <string name="action_refresh_map">Refresh station map</string>
+    <string name="action_refresh_sun_times">Refresh sun times</string>
+    <string name="data_working">Refreshing…</string>
+
+    <!-- The sun-times readout. Two lines: the times themselves, then which day they belong to. -->
+    <string name="sun_times">SUNRISE %1$s  ·  SUNSET %2$s</string>
+    <string name="sun_times_none">SUN TIMES: none stored</string>
+    <string name="sun_times_unreadable">SUN TIMES: stored, but unreadable</string>
+    <string name="sun_times_no_key">No Azure Maps key in this build — sun times cannot be fetched.</string>
+    <string name="sun_times_refreshed">Sun times refreshed — sunrise %1$s, sunset %2$s.</string>
+    <string name="sun_times_failed">Could not refresh sun times (%1$s). The stored times are still in use.</string>
+    <string name="no_reason_given">no reason given</string>
+
+    <!-- The station map readout: what the location trigger can currently fire on. -->
+    <string name="station_map">STATION MAP: %1$d station(s)</string>
+    <string name="station_map_none">STATION MAP: empty — the location trigger cannot fire.</string>
+    <string name="station_map_refreshed">Station map refreshed — %1$d from the API (%2$d new, %3$d updated, %4$d removed) · %5$d rows in the table.</string>
+    <string name="station_map_failed">Could not refresh the station map. The stored one is still in use.</string>
+    <string name="station_map_empty">The server returned no stations — keeping the stored map.</string>
+    <string name="station_map_no_key">No API credentials in this build — the station map cannot be fetched.</string>
+
+    <!--
+      The tunables document. Its readout names what is IN FORCE, which is not necessarily what is on
+      disk: a fetched document is stored and only applied at the next start, so the button has to say
+      that rather than imply the values changed under the operator.
+    -->
+    <string name="action_refresh_config">Refresh config</string>
+    <string name="config_refreshed">Config fetched and stored — it takes effect when the app next starts.</string>
+    <string name="config_refresh_failed">Could not fetch the config. The one in force is unchanged.</string>
+    <string name="config_no_key">No API credentials in this build — the config cannot be fetched.</string>
+    <string name="capture_status_now">NOW CAPTURING</string>
+    <string name="capture_status_queue">VIDEO QUEUE</string>
+    <string name="capture_status_idle">"BOARD     : — nothing is being captured —"</string>
+    <string name="capture_status_polling">"— idle, polling every 5s —"</string>
+    <string name="capture_status_queue_empty">"— the queue is empty —"</string>
+    <string name="errors_back_home">&#9664;  BACK TO HOME</string>
+    <string name="errors_hint">TAP A ROW TO OPEN THE SCREEN THAT FIXES IT, WHERE THERE IS ONE</string>
+    <string name="errors_none_banner">NO PROBLEMS</string>
+    <plurals name="errors_count">
+        <item quantity="one">%d PROBLEM</item>
+        <item quantity="other">%d PROBLEMS</item>
+    </plurals>
+    <string name="vehicle_save">SAVE</string>
+    <string name="vehicle_form_hint">Confirm the details, then SAVE. Location access is required — every reading is stamped with a GPS fix.</string>
+    <string name="vehicle_saved">Saved.</string>
+    <string name="device_info_heading">DEVICE INFO</string>
+    <string name="errors_no_fix">No fix for this one from here — it is recorded in the log.</string>
+</resources>
