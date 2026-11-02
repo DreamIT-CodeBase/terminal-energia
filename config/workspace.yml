@@ -19,7 +19,10 @@ azure:
 
 # The single compute instance both pipelines run on.
 # ComputeInstance, Standard_E4ds_v4 -- 4 vCPU / 32 GiB. Must be Running
-# before a job is submitted; a stopped instance leaves the job queued.
+# before a job is submitted. A stopped instance does NOT queue the job: the
+# step fails immediately with BadRequest, "Compute instance is not in running
+# status". The instance also has a 30 minute idle shutdown, so it stops itself
+# between weekly runs and has to be started again each time.
 compute: "terminal-scout-train"
 
 # Registered environment, created by scripts/create_environment.py.

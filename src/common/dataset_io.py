@@ -223,10 +223,13 @@ def write_data_yaml(
 ) -> Path:
     """Ultralytics descriptor for a prepared dataset.
 
-    `path` is absolute because the dataset folder is a mounted Azure ML
-    output and its location differs between the prepare, train and evaluate
-    steps -- a relative path would resolve against whatever cwd the step
-    happens to have.
+    `path` is written absolute, but it is only valid inside this step. The
+    dataset folder is a mounted Azure ML output and every step mounts it at a
+    different absolute location, so a later step reading this file verbatim
+    looks for images under prepare_data's job directory and finds nothing.
+    Downstream steps therefore re-pin the root through `pinned_data_yaml`
+    below; the value here records where the dataset was written, and is not a
+    path any other container can use.
 
     `val_relative` points at the held-out split when there is one. With no
     split it points back at the train images: Ultralytics needs a `val` target
@@ -277,3 +280,60 @@ def find_data_yaml(
     raise FileNotFoundError(
         f"No data.yaml found under {dataset_dir}."
     )
+
+
+def pinned_data_yaml(
+    dataset_dir: Path,
+    work_dir: Path | None = None,
+) -> Path:
+    """The prepared dataset's data.yaml, with its root valid in THIS container.
+
+    Each step mounts the prepared dataset somewhere different: prepare_data
+    writes it under its own job directory, and train, evaluate and
+    export_tflite each see it at another path again. The absolute `path`
+    write_data_yaml baked in is correct only inside the step that produced it,
+    so handing the file straight to Ultralytics in a later step fails with
+
+        Dataset '.../data.yaml' images not found, missing path
+        '/mnt/azureml/cr/j/<the-earlier-job-id>/.../prepared_dataset/train/images'
+
+    The root is therefore re-pinned here, at read time, to the directory this
+    container actually sees. Letting Ultralytics infer it would also work --
+    with `path` absent it falls back to the yaml file's own parent -- but that
+    is its current behaviour rather than a contract, and a change there would
+    show up as a silently wrong dataset instead of an error.
+
+    The root is taken from the located file's own parent rather than from
+    `dataset_dir`, so it stays correct even when the yaml is found one level
+    down by the rglob fallback in find_data_yaml.
+
+    Written to `work_dir` (the step's cwd by default) rather than over the
+    original, because an input mount is not necessarily writable.
+    """
+
+    source = find_data_yaml(dataset_dir)
+
+    root = source.parent.resolve().as_posix()
+
+    # Line-based rather than a yaml round-trip: it keeps the generated header
+    # comment, and the only key that must change is one this repo writes.
+    kept = [
+        line
+        for line in source.read_text().splitlines()
+        if not line.startswith("path:")
+    ]
+
+    destination = (work_dir or Path.cwd()) / "data.pinned.yaml"
+
+    destination.write_text(
+        chr(10).join(
+            [
+                f"# Re-pinned for this step from {source}.",
+                f"path: {root}",
+            ]
+            + kept
+        )
+        + chr(10)
+    )
+
+    return destination

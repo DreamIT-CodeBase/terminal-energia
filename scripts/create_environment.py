@@ -7,10 +7,18 @@
 The components reference the environment as `yolo-pipeline-env@latest`, so a
 rebuild is picked up without editing any component YAML.
 
+The image is built from `environments/Dockerfile` rather than from an
+`image` + `conda_file` pair. The Dockerfile has to install the X libraries the
+OpenCV wheels link against and force the headless build to own `cv2/`, and
+`conda_file` offers no hook to run apt. Its header comment records why.
+
 `--if-changed` exists because deploy.sh runs on every sync and this image is
 expensive: torch plus TensorFlow is a long build. The decision is made by
-stamping each version with a hash of the conda file and the base image, then
-comparing that stamp against the local files. The stamp lives on the
+stamping each version with a hash of the Dockerfile, the conda file and the
+base image, then comparing that stamp against the local files. The Dockerfile
+is in the hash because it now decides as much about the image as conda.yml
+does -- editing it without rebuilding would silently keep the old image. The
+stamp lives on the
 environment itself rather than in a local dotfile, so it is correct from any
 machine and any checkout.
 """
@@ -28,10 +36,16 @@ from _config import REPO_ROOT, get_ml_client, load_config  # noqa: E402
 
 ENVIRONMENT_NAME = "yolo-pipeline-env"
 
-# Must match environments/environment.yml. preflight.py asserts they agree.
+# Must match the FROM line in environments/Dockerfile. preflight.py asserts
+# they agree -- the value is no longer passed to the service (the Dockerfile is
+# what declares it), so nothing else would catch a drift.
 BASE_IMAGE = "mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04"
 
 SPEC_TAG = "spec_sha256"
+
+# Field separator inside the spec hash, so concatenating two files cannot
+# collide with a single file that happens to contain the join point.
+SEPARATOR = bytes([0])
 
 
 def parse_arguments():
@@ -56,7 +70,8 @@ def parse_arguments():
 
 
 def spec_hash(
-    conda_file: Path
+    conda_file: Path,
+    dockerfile: Path,
 ) -> str:
     """Fingerprint of everything that determines the image."""
 
@@ -65,6 +80,8 @@ def spec_hash(
     digest.update(BASE_IMAGE.encode("utf-8"))
     digest.update(b"\0")
     digest.update(conda_file.read_bytes())
+    digest.update(SEPARATOR)
+    digest.update(dockerfile.read_bytes())
 
     return digest.hexdigest()
 
@@ -112,18 +129,22 @@ def latest_environment(
 
 def main() -> int:
 
-    from azure.ai.ml.entities import Environment
+    from azure.ai.ml.entities import BuildContext, Environment
 
     args = parse_arguments()
 
     config = load_config()
 
-    conda_file = REPO_ROOT / "environments" / "conda.yml"
+    environments_dir = REPO_ROOT / "environments"
 
-    if not conda_file.exists():
-        raise SystemExit(f"Missing {conda_file}")
+    conda_file = environments_dir / "conda.yml"
+    dockerfile = environments_dir / "Dockerfile"
 
-    local_hash = spec_hash(conda_file)
+    for required in (conda_file, dockerfile):
+        if not required.exists():
+            raise SystemExit(f"Missing {required}")
+
+    local_hash = spec_hash(conda_file, dockerfile)
 
     ml_client = get_ml_client(config)
 
@@ -178,9 +199,14 @@ def main() -> int:
             "pipelines: albumentations dataset prep, Ultralytics training and "
             "evaluation, and int8 TFLite export. CPU-only."
         ),
-        # Must stay in step with environments/environment.yml.
-        image=BASE_IMAGE,
-        conda_file=str(conda_file),
+        # Must stay in step with environments/environment.yml. The whole
+        # environments/ folder is the build context, so conda.yml reaches the
+        # image through the Dockerfile's COPY rather than being passed
+        # separately -- v2 does not accept `build` and `conda_file` together.
+        build=BuildContext(
+            path=str(environments_dir),
+            dockerfile_path=dockerfile.name,
+        ),
         tags={
             SPEC_TAG: local_hash,
             "accelerator": "cpu",

@@ -19,7 +19,7 @@ import json
 
 from pathlib import Path
 
-from common.dataset_io import find_data_yaml
+from common.dataset_io import pinned_data_yaml
 from common.model_files import (
     DECISION_FILE,
     find_weights,
@@ -208,7 +208,7 @@ def main() -> None:
     evaluation_dir = Path(args.evaluation)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
-    data_yaml = find_data_yaml(Path(args.prepared_dataset))
+    data_yaml = pinned_data_yaml(Path(args.prepared_dataset))
 
     device = resolve_device(args.device)
 

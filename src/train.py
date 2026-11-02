@@ -19,7 +19,7 @@ import shutil
 
 from pathlib import Path
 
-from common.dataset_io import find_data_yaml
+from common.dataset_io import pinned_data_yaml
 from common.model_files import require_weights, write_json
 from common import tracking
 
@@ -248,7 +248,7 @@ def main() -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_yaml = find_data_yaml(dataset_dir)
+    data_yaml = pinned_data_yaml(dataset_dir)
 
     starting_weights = require_weights(
         Path(args.previous_model),

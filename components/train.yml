@@ -22,14 +22,22 @@ inputs:
       Weights to continue from -- a registered model version, or the staged
       base weights on the first run for a stage.
 
+  # Optional, and deliberately without a `default`. Exactly one of these two
+  # is empty in every run -- cold start has no version, a warm start needs no
+  # filename because a registered model folder holds only one model's weights.
+  # Azure ML treats an empty string as "not specified" when it builds the
+  # command text, and refuses outright unless the parameter is optional. A
+  # `default` here would count as specified and defeat that, so the default
+  # lives in the script's argparse instead, which is where both scripts
+  # already read empty as "absent".
   previous_model_version:
     type: string
-    default: ""
+    optional: true
     description: Registered version the weights came from. Empty means cold start.
 
   weights_name:
     type: string
-    default: ""
+    optional: true
     description: >
       Exact .pt filename inside previous_model. Required when that folder
       holds weights for more than one model.
@@ -84,9 +92,9 @@ command: >-
   python train.py
   --prepared_dataset "${{inputs.prepared_dataset}}"
   --previous_model "${{inputs.previous_model}}"
-  --previous_model_version "${{inputs.previous_model_version}}"
+  $[[--previous_model_version "${{inputs.previous_model_version}}"]]
   --trained_model "${{outputs.trained_model}}"
-  --weights_name "${{inputs.weights_name}}"
+  $[[--weights_name "${{inputs.weights_name}}"]]
   --stage "${{inputs.stage}}"
   --week "${{inputs.week}}"
   --epochs ${{inputs.epochs}}

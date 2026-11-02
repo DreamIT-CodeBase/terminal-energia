@@ -90,6 +90,35 @@ def parse_arguments():
     parser.add_argument("--per-image", type=int, default=None)
     parser.add_argument("--device", default=None)
 
+    # --- destination overrides, for a test run ---
+    #
+    # Normally both come from the pipeline YAML / config/workspace.yml, and a
+    # weekly run should never touch them. They exist so a smoke test can
+    # publish somewhere the fleet does not read: --model-root writes the whole
+    # <root>/<stage>/ tree under a different prefix, leaving `detectors/`
+    # -- the path the Android app downloads from -- untouched.
+    parser.add_argument(
+        "--model-root",
+        default=None,
+        help=(
+            "Override the model container prefix (default: model_root in "
+            "config/workspace.yml). Publishes to <root>/<stage>/ instead of "
+            "detectors/<stage>/, so a test run cannot become the fleet's "
+            "latest model."
+        ),
+    )
+
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        help=(
+            "Override the registry name the job registers under (default: the "
+            "pipeline YAML's model_name). Use with care: the weekly run "
+            "continues from whatever is registered as latest under the real "
+            "name, so a test model must not carry it."
+        ),
+    )
+
     parser.add_argument(
         "--no-augment",
         action="store_true",
@@ -428,7 +457,8 @@ def build_job(
         {"inputs.has_previous": "true" if has_previous else "false"},
         {"inputs.weights_name": weights_name},
         {"inputs.week": week},
-        {"inputs.model_root": config.get("model_root", "detectors")},
+        {"inputs.model_root":
+            args.model_root or config.get("model_root", "detectors")},
 
         {"outputs.published_model.path": model_datastore_uri(config)},
 
@@ -441,6 +471,9 @@ def build_job(
             "previous_model_version": previous_version or "cold-start",
         }},
     ]
+
+    if args.model_name:
+        overrides.append({"inputs.model_name": args.model_name})
 
     if args.no_register:
         overrides.append({"inputs.register": "false"})

@@ -18,7 +18,7 @@ import shutil
 
 from pathlib import Path
 
-from common.dataset_io import find_data_yaml
+from common.dataset_io import pinned_data_yaml
 from common.model_files import find_weights, read_decision, write_json
 from common import tracking
 
@@ -96,7 +96,7 @@ def main() -> None:
             f"No .pt found in {args.trained_model}."
         )
 
-    data_yaml = find_data_yaml(Path(args.prepared_dataset))
+    data_yaml = pinned_data_yaml(Path(args.prepared_dataset))
 
     use_int8 = as_bool(args.int8)
 

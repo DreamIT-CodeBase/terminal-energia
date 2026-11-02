@@ -7,11 +7,15 @@ description: >
   weekly training pipelines: dataset prep with albumentations,
   YOLO fine-tuning, evaluation, and int8 TFLite export.
 
-# CPU base image, matching the compute. Nothing in these pipelines needs
-# CUDA, and the CUDA variant is a much larger pull for no benefit. If a GPU
-# compute is added later, switch to
-# openmpi4.1.0-cuda11.8-cudnn8-ubuntu22.04 AND drop the `+cpu` torch pins in
-# conda.yml -- the image alone is not enough.
-image: mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu22.04
-
-conda_file: ./conda.yml
+# A build context, not `image:` + `conda_file:`.
+#
+# ./Dockerfile installs the X libraries the OpenCV wheels link against and
+# forces the headless build to own cv2/ -- neither of which the conda_file
+# form can express, since it gives no hook to run apt. See the header comment
+# in ./Dockerfile for the failure that made this necessary.
+#
+# The base image is now the FROM line in ./Dockerfile. preflight asserts it
+# agrees with BASE_IMAGE in scripts/create_environment.py.
+build:
+  path: .
+  dockerfile_path: Dockerfile

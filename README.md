@@ -36,7 +36,7 @@ snapshots/<week>/<stage>/          (annotated container, written by system-api)
 | Path | What it is |
 |---|---|
 | `config/workspace.yml` | **The only file you must edit.** Subscription, RG, workspace, compute, datastore names. |
-| `environments/` | The one shared environment: `conda.yml` + the AzureML spec. |
+| `environments/` | The one shared environment: `Dockerfile` + `conda.yml` + the AzureML spec. |
 | `components/` | Five reusable command components, one per step. |
 | `pipelines/` | `board_pipeline.yml`, `price_region_pipeline.yml`. Hyperparameters live here. |
 | `src/` | The step scripts. Uploaded whole as each component's snapshot. |
@@ -245,6 +245,29 @@ squeezed from both sides. If it ever stops resolving, give
 `components/export_tflite.yml` its own environment; nothing else depends on
 them sharing an image.
 
+**Why the environment is a Dockerfile and not just `conda_file`.** Ultralytics
+depends on `opencv-python`; this environment also asks for
+`opencv-python-headless`. Both ship the same `cv2/` directory, so pip installs
+both and whichever lands second owns `cv2` — an ordering nothing in the spec
+controls. When the GUI wheel won, every step that imports cv2 (`prepare_data`,
+`train`, `evaluate`) died before doing any work:
+
+```
+ImportError: libxcb.so.1: cannot open shared object file: No such file or directory
+```
+
+because the base image carries no X libraries. `environments/Dockerfile` fixes
+it from both ends: it `apt-get`s the X/GL libraries, *and* it removes the GUI
+wheel after the conda env is created so headless is unambiguously the `cv2`
+that gets imported. It then does an `import cv2` inside the build, so a broken
+image fails the build rather than a job twenty minutes into a submit.
+
+The `image:` + `conda_file:` pair cannot express the apt half — it offers no
+hook to run a command — and Azure ML v2 rejects `build` together with
+`conda_file`, so `conda.yml` now reaches the image through the Dockerfile's
+`COPY`. Reordering `conda.yml` is *not* an alternative fix: pip resolves the
+whole `pip:` list in one pass and chooses its own install order.
+
 ## Propagating local changes to the workspace
 
 Most of this repo needs no "deploy" step — the pipeline YAML references
@@ -259,10 +282,10 @@ keyed by a content hash. Change a `.py` file, submit, and the new code runs.
 | `components/*.yml` | **Nothing.** Read from disk at submit time. |
 | `pipelines/*.yml` | **Nothing.** Read at submit; never stored server-side. |
 | `config/workspace.yml` | **Nothing.** Only the local scripts read it. |
-| `environments/conda.yml` | **Run `python scripts/create_environment.py`**, then wait for the image build to go green in Studio → Environments. Components pin `@latest`, so the next submit picks it up. |
+| `environments/conda.yml` or `environments/Dockerfile` | **Run `python scripts/create_environment.py`**, then wait for the image build to go green in Studio → Environments. Components pin `@latest`, so the next submit picks it up. Both files are in the spec hash, so `--if-changed` notices either one. |
 | A new week of annotations | `submit_pipeline.py` registers the data asset version for you. |
 
-Two things that will surprise you if you don't know them:
+Three things that will surprise you if you don't know them:
 
 **Step reuse.** Azure ML caches step outputs keyed on the component hash plus
 its inputs. Edit only `evaluate.py`, and `prepare_data` and `train` come back
@@ -274,6 +297,38 @@ pipeline's `settings:`
 ```yaml
   force_rerun: true
 ```
+
+**A string input that can be empty must be `optional`.** Azure ML treats an
+empty string as *not specified* when it builds a step's command text, and
+refuses to build it at all if the parameter is not declared optional:
+
+```
+Can't build command text for [azureml_anonymous], moduleId [...] executionId [...]:
+Assignment for parameter previous_model_version is not specified
+```
+
+A component-level `default: ""` does not save you -- the pipeline's explicit
+`${{parent.inputs.x}}` binding takes precedence and resolves to empty, and a
+default would in any case count as "specified" and defeat the `optional` flag.
+The fix is `optional: true` with the flag wrapped in `$[[ ... ]]` so the whole
+segment drops out, letting the script's own argparse default apply:
+
+```yaml
+  weights_name:
+    type: string
+    optional: true
+
+command: >-
+  python train.py
+  $[[--weights_name "${{inputs.weights_name}}"]]
+```
+
+This bites `previous_model_version` and `weights_name` in `train.yml` and
+`weights_name` in `evaluate.yml`, and it is easy to miss because exactly one of
+the two is empty in any given run -- a cold start has no version, and a warm
+start needs no filename. Fixing only the one that failed gets you a green run
+today and a broken one next week. `jobs.validate()` does **not** catch this;
+it only appears when a job is actually submitted.
 
 **Don't register the components by name.** If you ever run `az ml component
 create` and switch the pipelines to `component: azureml:yolo_train@latest`,
@@ -376,6 +431,20 @@ python scripts/submit_pipeline.py --stage board --validate   # ask the workspace
 | `--no-register` | Publish to the model container but leave the registry alone. |
 
 ## Troubleshooting
+
+**A step fails instantly with "Compute instance is not in running status"** --
+the compute was asleep. `terminal-scout-train` has a 30 minute idle shutdown,
+so it stops itself between weekly runs. The job does *not* queue and wait; it
+fails with `BadRequest` as soon as the first step is scheduled. Start the
+instance before submitting:
+
+```powershell
+az ml compute start --name terminal-scout-train `
+  --resource-group terminal-scout --workspace-name mltraining
+```
+
+This matters most for a scheduled run: anything driving `submit_pipeline.py`
+weekly has to start the compute first, or every week fails on step one.
 
 **`prepare_data`: "No images found"** — the week has no *finished* videos. A
 video only enters a snapshot once **both** labelling passes are submitted;

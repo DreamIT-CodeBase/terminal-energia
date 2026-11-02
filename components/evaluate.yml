@@ -22,9 +22,12 @@ inputs:
   trained_model:
     type: uri_folder
 
+  # Optional with no `default`, for the same reason as in train.yml: it is
+  # empty whenever previous_model is a registered model folder, and Azure ML
+  # rejects an empty assignment for a non-optional parameter.
   weights_name:
     type: string
-    default: ""
+    optional: true
     description: >
       Exact .pt filename inside previous_model. Required when that folder
       holds weights for more than one model.
@@ -75,7 +78,7 @@ command: >-
   --previous_model "${{inputs.previous_model}}"
   --trained_model "${{inputs.trained_model}}"
   --evaluation "${{outputs.evaluation}}"
-  --weights_name "${{inputs.weights_name}}"
+  $[[--weights_name "${{inputs.weights_name}}"]]
   --stage "${{inputs.stage}}"
   --week "${{inputs.week}}"
   --has_previous ${{inputs.has_previous}}

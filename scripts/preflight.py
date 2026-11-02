@@ -455,14 +455,67 @@ def check_snapshot_hygiene(
     else:
         report.check(True, "no build artifacts under src/")
 
-    image_spec = load_yaml(ROOT / "environments" / "environment.yml").get("image", "")
+    # The environment is a Docker build context, so the base image lives in the
+    # Dockerfile's FROM rather than in environment.yml. Reading `image` here
+    # would now return "" -- and "" is a substring of everything, so the check
+    # would pass while verifying nothing.
+    env_spec = load_yaml(ROOT / "environments" / "environment.yml")
+
+    build_spec = env_spec.get("build") or {}
+
+    report.check(
+        bool(build_spec.get("dockerfile_path")),
+        "environment.yml declares a Docker build context",
+        f"build section is {build_spec!r}",
+    )
+
+    report.check(
+        "image" not in env_spec,
+        "environment.yml has no stale top-level image (build context wins)",
+        f"found image: {env_spec.get('image')!r}",
+    )
+
+    dockerfile = ROOT / "environments" / build_spec.get("dockerfile_path", "Dockerfile")
+
+    if not dockerfile.exists():
+        report.check(False, f"{dockerfile.name} exists", f"missing {dockerfile}")
+        return
+
+    from_lines = [
+        line.split()[1]
+        for line in dockerfile.read_text(encoding="utf-8").splitlines()
+        if line.strip().upper().startswith("FROM ") and len(line.split()) > 1
+    ]
+
+    report.check(
+        len(from_lines) == 1,
+        "Dockerfile has exactly one FROM",
+        f"found {from_lines}",
+    )
 
     creator = (ROOT / "scripts" / "create_environment.py").read_text(encoding="utf-8")
 
+    base_image = from_lines[0] if from_lines else ""
+
     report.check(
-        image_spec in creator,
-        "environment.yml and create_environment.py agree on the base image",
-        f"environment.yml says {image_spec!r}",
+        bool(base_image) and base_image in creator,
+        "Dockerfile and create_environment.py agree on the base image",
+        f"Dockerfile FROM is {base_image!r}",
+    )
+
+    # conda.yml only reaches the image through the Dockerfile's COPY now, so a
+    # rename there would break the build with no other warning.
+    report.check(
+        "conda.yml" in dockerfile.read_text(encoding="utf-8"),
+        "Dockerfile copies conda.yml into the image",
+    )
+
+    # The whole point of the build context: without this the GUI OpenCV wheel
+    # can win the race for cv2/ again and every step that imports it dies.
+    report.check(
+        "opencv-python-headless" in dockerfile.read_text(encoding="utf-8")
+        and "uninstall" in dockerfile.read_text(encoding="utf-8"),
+        "Dockerfile forces the headless OpenCV to own cv2",
     )
 
 

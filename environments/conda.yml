@@ -52,7 +52,21 @@ dependencies:
 
       # --- int8 TFLite export chain ---
       # ultralytics shells out to onnx2tf, which needs all of these.
-      - tensorflow-cpu==2.18.*
+      #
+      # Full `tensorflow`, not `tensorflow-cpu`, and >=2.19 deliberately.
+      # Ultralytics' exporter requires `tf_keras<=2.19.0`, and tf_keras
+      # depends on the distribution named `tensorflow` (>=2.19,<2.20).
+      # `tensorflow-cpu` does not satisfy that by name however new it is, so
+      # Ultralytics' runtime AutoUpdate installed tensorflow 2.19.1 on top of
+      # tensorflow-cpu 2.18.1 and spliced the two trees together:
+      #
+      #   ImportError: cannot import name 'float8_e4m3b11fnuz'
+      #                from 'tensorflow.python.framework.dtypes'
+      #
+      # Naming the same distribution tf_keras asks for makes that AutoUpdate a
+      # no-op. This is a bigger wheel than tensorflow-cpu; it does NOT drag in
+      # the nvidia-* CUDA wheels, which only arrive with the [and-cuda] extra.
+      - tensorflow==2.19.*
       - onnx==1.17.*
       - onnxslim
       - onnxruntime
