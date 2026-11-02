@@ -1,0 +1,9 @@
+param sshPublicKeys_terminalscoutmltrainingssh_name string = 'terminalscoutmltrainingssh'
+
+resource sshPublicKeys_terminalscoutmltrainingssh_name_resource 'Microsoft.Compute/sshPublicKeys@2026-04-01' = {
+  location: 'canadacentral'
+  name: sshPublicKeys_terminalscoutmltrainingssh_name
+  properties: {
+    publicKey: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC8eIIu147eNIZYV+c6y8x05VGtHRj5apMr6sQDUlSH5P0RNmFt7EeNWASWlLcP0VU3M0tzTvpdPClav6PHMluoMmz+T+o9HZNZsc5KgBYMsyZUqt8dU+4I9atawt17jIFXRq6fjEyjwdi9RQt59waHJImuA9tTmnTtKuVyElioyC7i/aoA0dPI9hR9aMe6eag5+/3l16zd7pcjc4cW8gqEGh1h/lwlT7zhBGyLFcNUIiw8yO3ztorZ2rajkXrq7aapb87SSiZ7WYHqlgnRNuyHjdzapBwAFqvn2UCyRGTtOTPe/S62tnVAKKYRW72a2rfYXn3q4t28ElvEUSLBaQ3DbFy55d87XqH6oXn3Pl6VXSouhdkg9b6OPnqriY8/rPWs9+1RCJT7nae3WjuhLabGvsJD8HkoJWmPIcZc0CTYCDV4XkAcUDIZy4qKDVqRhqqI10RiC5x9jEou/vfeJDJ4g25+fDgbHE5b0Xdiq5CJLFjA+38/mMou7+ay/yXokzk= generated-by-azure'
+  }
+}
