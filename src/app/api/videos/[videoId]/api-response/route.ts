@@ -32,3 +32,33 @@ export async function GET(
     return errorResponse(error);
   }
 }
+
+
+export async function PUT(
+  request: Request,
+  context: RouteContext<'/api/videos/[videoId]/api-response'>
+) {
+
+  try {
+    await requireUserEmail();
+
+    const { videoId } = await context.params;
+    const updatedApiResponse = await request.json();
+
+    const data = await systemApiJson(
+      `/videos/${encodeURIComponent(videoId)}/updated-api-response`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedApiResponse)
+      }
+    );
+
+    return Response.json(data);
+
+  } catch (error) {
+    return errorResponse(error);
+  }
+}

@@ -2,7 +2,18 @@
 
 import React, { useEffect, useState } from 'react';
 
-import { Check, FileJson, HardDriveDownload, Loader2 } from 'lucide-react';
+import { Check, FileJson, HardDriveDownload, Loader2, Trash2 } from 'lucide-react';
+
+import { Station } from '../../types';
+import {
+  applyStationFuelTypes,
+  coordinatesFromResponse,
+  EnrichedFuelType,
+  EnrichedStation,
+  findStationByCoordinates,
+  firstBoardWithFuelPriceRowsIndex,
+  stationNameFromResponse
+} from './shared';
 
 
 // ============================================================
@@ -69,6 +80,20 @@ const childKind = (
 };
 
 
+const hasFuelPriceRows = (
+  value: unknown
+): boolean => {
+
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const fuelPrices = (value as Record<string, unknown>).fuel_prices;
+
+  return Array.isArray(fuelPrices) && fuelPrices.length > 0;
+};
+
+
 // ============================================================
 // EDIT STATE
 //
@@ -87,6 +112,13 @@ interface NodeProps {
   editable: boolean;
   edits: Edits;
   setEdit: (path: string, value: string) => void;
+  // Board paths (`boards.0`) staged for removal, and the toggle for them. A
+  // board renders with a remove control; removing it hides it here and drops
+  // it from the JSON on submit.
+  removed: Record<string, boolean>;
+  removeBoard: (path: string) => void;
+  removedFuelPrices: Record<string, boolean>;
+  removeFuelPrice: (path: string) => void;
 }
 
 
@@ -109,7 +141,7 @@ const EditableLeaf: React.FC<{
       inputMode={isNumber ? 'decimal' : 'text'}
       onChange={event => setEdit(path, event.target.value)}
       // Grow with the content so the tree stays tight around short values.
-      style={{ width: `${Math.max(current.length, 2) + 1.5}ch` }}
+      style={{ width: `${Math.max(current.length, 2) + 3}ch` }}
       className="inline-block px-1 py-0 rounded bg-[#0d0d10] border border-[#3a3a42] text-amber-200 focus:border-blue-500 focus:outline-none"
     />
   );
@@ -144,7 +176,11 @@ const Node: React.FC<NodeProps> = ({
   path,
   editable,
   edits,
-  setEdit
+  setEdit,
+  removed,
+  removeBoard,
+  removedFuelPrices,
+  removeFuelPrice
 }) => {
 
   // ----- Object -----
@@ -169,6 +205,10 @@ const Node: React.FC<NodeProps> = ({
                   editable={isEditable(key, kind)}
                   edits={edits}
                   setEdit={setEdit}
+                  removed={removed}
+                  removeBoard={removeBoard}
+                  removedFuelPrices={removedFuelPrices}
+                  removeFuelPrice={removeFuelPrice}
                 />
                 {
                   index < entries.length - 1 && (
@@ -187,7 +227,19 @@ const Node: React.FC<NodeProps> = ({
   // ----- Array -----
   if (Array.isArray(value)) {
 
-    if (value.length === 0) {
+    // Hide boards without rows for display only. Original indices stay in each
+    // path so edits and explicit removals still target `base`.
+    const items = value
+      .map((element, index) => ({ element, path: `${path}.${index}` }))
+      .filter(item =>
+        (kind !== 'board' || (
+          hasFuelPriceRows(item.element) &&
+          !removed[item.path]
+        )) &&
+        (kind !== 'fuelPrice' || !removedFuelPrices[item.path])
+      );
+
+    if (items.length === 0) {
       return <span className="text-zinc-600">[]</span>;
     }
 
@@ -196,22 +248,50 @@ const Node: React.FC<NodeProps> = ({
         <span className="text-zinc-600">[</span>
         <div className="pl-3">
           {
-            value.map((element, index) => (
-              <div key={index}>
-                <Node
-                  value={element}
-                  // Elements inherit the kind carried into the array.
-                  kind={kind}
-                  path={`${path}.${index}`}
-                  editable={false}
-                  edits={edits}
-                  setEdit={setEdit}
-                />
+            items.map((item, visibleIndex) => (
+              <div key={item.path} className="group/board flex items-start gap-1">
                 {
-                  index < value.length - 1 && (
-                    <span className="text-zinc-600">,</span>
+                  kind === 'board' && (
+                    <button
+                      onClick={() => removeBoard(item.path)}
+                      title="Remove this board"
+                      className="mt-0.5 shrink-0 p-0.5 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   )
                 }
+                {
+                  kind === 'fuelPrice' && (
+                    <button
+                      onClick={() => removeFuelPrice(item.path)}
+                      title="Remove this price row"
+                      className="mt-0.5 shrink-0 p-0.5 rounded text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )
+                }
+                <span className="min-w-0">
+                  <Node
+                    value={item.element}
+                    // Elements inherit the kind carried into the array.
+                    kind={kind}
+                    path={item.path}
+                    editable={false}
+                    edits={edits}
+                    setEdit={setEdit}
+                    removed={removed}
+                    removeBoard={removeBoard}
+                    removedFuelPrices={removedFuelPrices}
+                    removeFuelPrice={removeFuelPrice}
+                  />
+                  {
+                    visibleIndex < items.length - 1 && (
+                      <span className="text-zinc-600">,</span>
+                    )
+                  }
+                </span>
               </div>
             ))
           }
@@ -297,6 +377,9 @@ interface ResponseJsonProps {
   videoId: string | null;
   isLoading: boolean;
   hasSelection: boolean;
+  stations: EnrichedStation[];
+  stationMapping: Station[];
+  onEnrichedStationSaved: (station: EnrichedStation) => void;
 }
 
 
@@ -304,7 +387,10 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
   apiResponse,
   videoId,
   isLoading,
-  hasSelection
+  hasSelection,
+  stations,
+  stationMapping,
+  onEnrichedStationSaved
 }) => {
 
   // The JSON actually shown and edited. It starts from the local draft when one
@@ -314,14 +400,28 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
   // Unsaved edits, by path. `submit` folds them into `base` and clears them.
   const [edits, setEdits] = useState<Edits>({});
 
-  // Whether `base` came from a saved draft rather than the server response.
-  const [fromDraft, setFromDraft] = useState(false);
+  // Board paths (`boards.0`) staged for removal, cleared on submit.
+  const [removed, setRemoved] = useState<Record<string, boolean>>({});
+  const [removedFuelPrices, setRemovedFuelPrices] =
+    useState<Record<string, boolean>>({});
 
   // Brief confirmation after a submit.
   const [justSaved, setJustSaved] = useState(false);
+  const [enrichedSaved, setEnrichedSaved] = useState(false);
+  const [enrichedSaveError, setEnrichedSaveError] = useState('');
+  const [responseSaveError, setResponseSaveError] = useState('');
+  const [isSavingResponse, setIsSavingResponse] = useState(false);
+  const [pendingResponseSave, setPendingResponseSave] = useState<unknown>(null);
+  const [pendingEnrichedUpdate, setPendingEnrichedUpdate] = useState<{
+    latitude: number;
+    longitude: number;
+    name: string | null;
+    fuel_types: EnrichedFuelType[];
+    deleted_row_nums: number[];
+  } | null>(null);
 
 
-  // A new run: prefer its saved draft, fall back to the server response, and
+  // A new run: prefer the cloud response, fall back to a browser draft, and
   // drop any edits from the run before.
   useEffect(
     () => {
@@ -335,19 +435,68 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
         // A private window or cleared storage just means no draft.
       }
 
+      // The API response may be the cloud-saved correction from another
+      // reviewer; it takes precedence over this browser's older draft.
+      const source = apiResponse ?? draft;
+      const matchedStation = findStationByCoordinates(source, stations);
+      const hydratedResponse = matchedStation
+        ? applyStationFuelTypes(source, matchedStation.fuel_types)
+        : source;
+
+      // The panel state must reset when the selected run or its response
+      // changes; this is the existing response-loading lifecycle.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setBase(draft ?? apiResponse ?? null);
+      setBase(hydratedResponse ?? null);
       setEdits({});
-      setFromDraft(draft != null);
+      setRemoved({});
+      setRemovedFuelPrices({});
       setJustSaved(false);
+      setEnrichedSaved(false);
+      setEnrichedSaveError('');
+      setResponseSaveError('');
+      setPendingResponseSave(null);
     },
+    // Enriched station refreshes are handled below without resetting edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [apiResponse, videoId]
+  );
+
+  useEffect(
+    () => {
+      // Synchronize already-loaded response data when the station list refreshes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBase((current: unknown) => {
+        if (current === null) return current;
+
+        const matchedStation = findStationByCoordinates(current, stations);
+        return matchedStation
+          ? applyStationFuelTypes(current, matchedStation.fuel_types)
+          : current;
+      });
+    },
+    // Refresh fuel names when enriched station data changes without resetting
+    // other response edits made in this panel.
+    [stations]
   );
 
 
   const setEdit = (path: string, value: string) => {
     setEdits(prev => ({ ...prev, [path]: value }));
     setJustSaved(false);
+    setEnrichedSaved(false);
+  };
+
+
+  const removeBoard = (path: string) => {
+    setRemoved(prev => ({ ...prev, [path]: true }));
+    setJustSaved(false);
+    setEnrichedSaved(false);
+  };
+
+  const removeFuelPrice = (path: string) => {
+    setRemovedFuelPrices(prev => ({ ...prev, [path]: true }));
+    setJustSaved(false);
+    setEnrichedSaved(false);
   };
 
 
@@ -357,12 +506,94 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
     path => edits[path] !== asDisplayString(valueAtPath(base, path))
   );
 
-  const dirty = changedPaths.length > 0;
+  const removedBoards = Object.keys(removed).filter(path => removed[path]);
+  const removedFuelPricePaths = Object.keys(removedFuelPrices)
+    .filter(path => removedFuelPrices[path]);
+
+  const changeCount =
+    changedPaths.length + removedBoards.length + removedFuelPricePaths.length;
+
+  const dirty = changeCount > 0;
+
+  const saveEnrichedUpdate = async (update: {
+    latitude: number;
+    longitude: number;
+    name: string | null;
+    fuel_types: EnrichedFuelType[];
+    deleted_row_nums: number[];
+  }) => {
+    setEnrichedSaveError('');
+
+    try {
+      const response = await fetch('/api/stations-enriched', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(update)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Enriched station update failed with status ${response.status}.`);
+      }
+
+      const data: { station?: EnrichedStation } = await response.json();
+      if (!data.station) {
+        throw new Error('Enriched station update returned no station record.');
+      }
+
+      setPendingEnrichedUpdate(null);
+      setEnrichedSaved(true);
+      onEnrichedStationSaved(data.station);
+    } catch (error) {
+      console.error('Enriched station save error:', error);
+      setPendingEnrichedUpdate(update);
+      setEnrichedSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Could not save enriched station fuel types.'
+      );
+    }
+  };
+
+  const saveUpdatedResponse = async (responseJson: unknown) => {
+    setIsSavingResponse(true);
+    setResponseSaveError('');
+
+    try {
+      const response = await fetch(
+        `/api/videos/${encodeURIComponent(videoId ?? '')}/api-response`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(responseJson)
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Updated response save failed with status ${response.status}.`);
+      }
+
+      setPendingResponseSave(null);
+      setResponseSaveError('');
+    } catch (error) {
+      console.error('Updated response save error:', error);
+      setPendingResponseSave(responseJson);
+      setResponseSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Could not save the updated response to cloud storage.'
+      );
+    } finally {
+      setIsSavingResponse(false);
+    }
+  };
 
 
-  const submit = () => {
+  const submit = async () => {
 
     if (!videoId || base == null || !dirty) return;
+
+    setEnrichedSaved(false);
+    setEnrichedSaveError('');
 
     const next = JSON.parse(JSON.stringify(base)) as Record<string, unknown>;
 
@@ -383,6 +614,121 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
       setValueAtPath(next, path, value);
     }
 
+    const firstBoardIndex = firstBoardWithFuelPriceRowsIndex(base);
+    const firstBoardPrefix = `boards.${firstBoardIndex}.fuel_prices.`;
+    const firstBoardDeleted = removedBoards.includes(`boards.${firstBoardIndex}`);
+    const changedFirstBoardFuelType = changedPaths.some(
+      path => path.startsWith(firstBoardPrefix) && path.endsWith('.fuel_type')
+    );
+    const deletedFirstBoardRows = removedFuelPricePaths.filter(
+      path => path.startsWith(firstBoardPrefix)
+    );
+    const shouldSaveFuelTypes =
+      firstBoardIndex >= 0 &&
+      !firstBoardDeleted &&
+      (changedFirstBoardFuelType || deletedFirstBoardRows.length > 0);
+
+    if (shouldSaveFuelTypes) {
+      const matchedResponseStation = findStationByCoordinates(next, stationMapping);
+      const firstBoard = Array.isArray(next.boards)
+        ? next.boards[firstBoardIndex]
+        : null;
+      const rows = firstBoard &&
+        typeof firstBoard === 'object' &&
+        Array.isArray((firstBoard as Record<string, unknown>).fuel_prices)
+        ? (firstBoard as Record<string, unknown>).fuel_prices as unknown[]
+        : [];
+      const fuelTypes: EnrichedFuelType[] = rows.flatMap((row, index) => {
+        if (removedFuelPrices[
+          `boards.${firstBoardIndex}.fuel_prices.${index}`
+        ]) {
+          return [];
+        }
+
+        const rowObject =
+          row !== null && typeof row === 'object'
+            ? row as Record<string, unknown>
+            : {};
+
+        return [{
+          row_num:
+            typeof rowObject.row_num === 'number'
+              ? rowObject.row_num
+              : index + 1,
+          fuel_type: String(rowObject.fuel_type ?? '').trim()
+        }];
+      });
+      const deletedRowNums = deletedFirstBoardRows.map(path => {
+        const rowIndex = Number(path.slice(path.lastIndexOf('.') + 1));
+        const sourceBoards = (base as Record<string, unknown>).boards;
+        const sourceBoard = Array.isArray(sourceBoards)
+          ? sourceBoards[firstBoardIndex]
+          : null;
+        const sourceRows = sourceBoard !== null && typeof sourceBoard === 'object'
+          ? (sourceBoard as Record<string, unknown>).fuel_prices
+          : null;
+        const sourceRow = Array.isArray(sourceRows)
+          ? sourceRows[rowIndex]
+          : null;
+        const sourceRowObject =
+          sourceRow !== null && typeof sourceRow === 'object'
+            ? sourceRow as Record<string, unknown>
+            : {};
+
+        return typeof sourceRowObject.row_num === 'number'
+          ? sourceRowObject.row_num
+          : rowIndex + 1;
+      });
+      const coordinates = coordinatesFromResponse(next);
+
+      if (coordinates && (fuelTypes.length > 0 || deletedRowNums.length > 0)) {
+        const update = {
+          latitude: coordinates.latitude,
+          longitude: coordinates.longitude,
+          name: matchedResponseStation?.name ??
+            stationNameFromResponse(next),
+          fuel_types: fuelTypes,
+          deleted_row_nums: deletedRowNums
+        };
+        setPendingEnrichedUpdate(update);
+        await saveEnrichedUpdate(update);
+      } else {
+        setEnrichedSaveError(
+          'Fuel types changed, but the response has no numeric station coordinates.'
+        );
+      }
+    }
+
+    if (Array.isArray(next.boards)) {
+      next.boards.forEach((board, boardIndex) => {
+        if (board === null || typeof board !== 'object') return;
+        const boardObject = board as Record<string, unknown>;
+        if (!Array.isArray(boardObject.fuel_prices)) return;
+
+        boardObject.fuel_prices = (boardObject.fuel_prices as unknown[])
+          .filter((_, rowIndex) =>
+            !removedFuelPrices[
+              `boards.${boardIndex}.fuel_prices.${rowIndex}`
+            ]
+          );
+      });
+    }
+
+    // Drop removed boards only after the first board's coordinate mapping has
+    // been built, then keep board_count honest with what remains.
+    if (Array.isArray(next.boards)) {
+      const remainingBoards = (next.boards as unknown[]).filter(
+        (_, index) => !removed[`boards.${index}`]
+      );
+      next.boards = remainingBoards;
+
+      if (typeof next.board_count === 'number') {
+        next.board_count = remainingBoards.length;
+      }
+    }
+
+    await saveUpdatedResponse(next);
+
     try {
       window.localStorage.setItem(localKey(videoId), JSON.stringify(next));
     } catch {
@@ -392,7 +738,8 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
 
     setBase(next);
     setEdits({});
-    setFromDraft(true);
+    setRemoved({});
+    setRemovedFuelPrices({});
     setJustSaved(true);
   };
 
@@ -408,16 +755,6 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           Response JSON
         </span>
-        {
-          fromDraft && (
-            <span
-              title="Showing your locally saved edits for this run, not the original response."
-              className="ml-auto px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
-            >
-              Local edit
-            </span>
-          )
-        }
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
@@ -440,6 +777,10 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
                     editable={false}
                     edits={edits}
                     setEdit={setEdit}
+                    removed={removed}
+                    removeBoard={removeBoard}
+                    removedFuelPrices={removedFuelPrices}
+                    removeFuelPrice={removeFuelPrice}
                   />
                 </div>
               )
@@ -457,34 +798,70 @@ export const ResponseJson: React.FC<ResponseJsonProps> = ({
       </div>
 
 
-      {/* SUBMIT: writes the edited JSON to this browser's local storage */}
+      {/* Submit persists the corrected response to cloud storage and local draft storage. */}
 
       {
         hasResponse && (
-          <div className="flex items-center gap-3 px-4 h-14 border-t border-[#232326] shrink-0">
+          <div className="flex items-center gap-2 px-3 h-14 border-t border-[#232326] shrink-0">
 
             <span className="text-[11px] text-zinc-500 min-w-0 truncate">
               {
                 dirty
-                  ? `${changedPaths.length} unsaved ${changedPaths.length === 1 ? 'change' : 'changes'}`
-                  : justSaved
+                  ? `${changeCount} unsaved ${changeCount === 1 ? 'change' : 'changes'}`
+                  : responseSaveError
+                    ? responseSaveError
+                  : enrichedSaveError
+                    ? enrichedSaveError
+                    : enrichedSaved
                     ? (
                       <span className="flex items-center gap-1 text-green-400">
                         <Check className="w-3.5 h-3.5" />
-                        Saved to local storage
+                        Response saved to cloud; fuel names saved to enriched stations
+                      </span>
+                    )
+                    : justSaved
+                    ? (
+                      <span className="flex items-center gap-1 text-green-400">
+                        <Check className="w-3.5 h-3.5" />
+                        Saved to cloud and local storage
                       </span>
                     )
                     : 'No changes'
               }
             </span>
 
+            {
+              pendingResponseSave !== null && (
+                <button
+                  onClick={() => saveUpdatedResponse(pendingResponseSave)}
+                  disabled={isSavingResponse}
+                  title="Retry saving the updated response to cloud storage"
+                  className="px-2 py-2 rounded border border-amber-500/40 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+                >
+                  Retry
+                </button>
+              )
+            }
+
+            {
+              pendingEnrichedUpdate && (
+                <button
+                  onClick={() => saveEnrichedUpdate(pendingEnrichedUpdate)}
+                  title="Retry saving fuel names to enriched stations"
+                  className="px-2 py-2 rounded border border-amber-500/40 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10"
+                >
+                  Retry
+                </button>
+              )
+            }
+
             <button
               onClick={submit}
-              disabled={!dirty}
+              disabled={!dirty || isSavingResponse}
               title={
                 dirty
-                  ? 'Save these edits to this browser (local storage only)'
-                  : 'Edit a price or fuel type to enable submit'
+                  ? 'Save response edits locally and fuel-name corrections to enriched stations'
+                  : 'Edit a price or fuel type, or remove a board, to enable submit'
               }
               className="ml-auto flex items-center gap-2 px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-sm font-semibold text-white transition-colors"
             >

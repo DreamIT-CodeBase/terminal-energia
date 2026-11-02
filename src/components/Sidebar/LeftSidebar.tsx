@@ -17,7 +17,7 @@ import {
 
 import {
   boardLabel,
-  formatTimestamp,
+  frameLabel,
   frameUrl,
   useAnnotationStore
 } from '../../store/useAnnotationStore';
@@ -218,9 +218,33 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-mono truncate">
-                        {formatTimestamp(frame.timestampMs)}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono truncate">
+                          {frameLabel(frame)}
+                        </span>
+
+                        {
+                          frame.origin === 'source' && (
+                            <span
+                              title="Extracted by the pipeline, not captured here"
+                              className="
+                                shrink-0
+                                px-1
+                                rounded
+                                bg-[#232326]
+                                text-[9px]
+                                font-semibold
+                                uppercase
+                                tracking-wide
+                                text-zinc-500
+                              "
+                            >
+                              pipeline
+                            </span>
+                          )
+                        }
                       </div>
+
                       <div className="text-[10px] text-zinc-500 mt-0.5">
                         {
                           frameBoards.length === 0
@@ -232,16 +256,23 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       </div>
                     </div>
 
-                    <button
-                      onClick={event => {
-                        event.stopPropagation();
-                        onDeleteFrame(frame.name);
-                      }}
-                      title="Discard this frame and everything drawn on it"
-                      className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {
+                      // A pipeline frame is source data and not ours to
+                      // delete. Leaving it unlabelled already keeps it out of
+                      // the dataset, so there is nothing to discard.
+                      frame.origin === 'captured' && (
+                        <button
+                          onClick={event => {
+                            event.stopPropagation();
+                            onDeleteFrame(frame.name);
+                          }}
+                          title="Discard this frame and everything drawn on it"
+                          className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    }
                   </div>
                 );
               })

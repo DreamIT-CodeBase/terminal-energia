@@ -21,6 +21,22 @@ const SYSTEM_API_KEY =
   '';
 
 
+// The fleet credential. Most console routes use the x-api-key above, but the
+// device configuration is only served on the device route (`/v1/config`), which
+// takes a device token. So this one read authenticates as a device: the secret
+// stays on the server and never reaches the browser, like the API key.
+const FLEET_SECRET =
+  process.env.FLEET_SECRET ||
+  '';
+
+
+// The device id the console presents when it authenticates for the config read.
+// Any value matching the API's id pattern works; it only labels the token.
+const CONSOLE_DEVICE_ID =
+  process.env.CONSOLE_DEVICE_ID ||
+  'labelling-console';
+
+
 export class SystemApiError extends Error {
 
   status: number;
@@ -153,6 +169,116 @@ export const systemApiRaw = async (
       cache: 'no-store'
     }
   );
+};
+
+
+// ============================================================
+// DEVICE CONFIGURATION
+//
+// Served only on the device route, so the console authenticates
+// as a device to read it: swap the fleet secret for a short-lived
+// token, then GET /v1/config with it. The token is cached across
+// requests and refreshed a little before it expires.
+// ============================================================
+
+interface DeviceToken {
+  token: string;
+  // Epoch millis when the cached token stops being usable.
+  expiresAtMs: number;
+}
+
+let cachedDeviceToken: DeviceToken | null = null;
+
+// Refreshed this long before expiry, so a call never races the clock.
+const TOKEN_REFRESH_MARGIN_MS = 30_000;
+
+
+const fetchDeviceToken = async (): Promise<string> => {
+
+  const now = Date.now();
+
+  if (
+    cachedDeviceToken &&
+    cachedDeviceToken.expiresAtMs - TOKEN_REFRESH_MARGIN_MS > now
+  ) {
+    return cachedDeviceToken.token;
+  }
+
+  if (!FLEET_SECRET) {
+    throw new SystemApiError(
+      'FLEET_SECRET is not set on the labelling UI server.',
+      500
+    );
+  }
+
+  const response = await fetch(
+    `${SYSTEM_API_URL}/v1/auth/token`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: CONSOLE_DEVICE_ID,
+        deviceSecret: FLEET_SECRET
+      }),
+      cache: 'no-store'
+    }
+  );
+
+  if (!response.ok) {
+    throw new SystemApiError(
+      await readErrorDetail(response),
+      response.status
+    );
+  }
+
+  const data = await response.json() as {
+    access_token: string;
+    expires_in?: number;
+  };
+
+  cachedDeviceToken = {
+    token: data.access_token,
+    expiresAtMs: now + (data.expires_in ?? 300) * 1000
+  };
+
+  return cachedDeviceToken.token;
+};
+
+
+/**
+ * The device configuration document (`/v1/config`), read with a device token
+ * brokered from the fleet secret. A 401 -- a token the API rejects -- is retried
+ * once with a fresh token, in case the cached one was invalidated server-side.
+ */
+export const deviceConfigJson = async <T>(): Promise<T> => {
+
+  const request = async (): Promise<Response> =>
+    fetch(
+      `${SYSTEM_API_URL}/v1/config`,
+      {
+        headers: {
+          Authorization: `Bearer ${await fetchDeviceToken()}`
+        },
+        cache: 'no-store'
+      }
+    );
+
+  let response = await request();
+
+  if (response.status === 401) {
+    // Drop the cached token and try once more with a fresh one.
+    cachedDeviceToken = null;
+    response = await request();
+  }
+
+  if (!response.ok) {
+    throw new SystemApiError(
+      await readErrorDetail(response),
+      response.status
+    );
+  }
+
+  return response.json() as Promise<T>;
 };
 
 

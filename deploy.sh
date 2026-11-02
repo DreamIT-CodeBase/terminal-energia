@@ -45,6 +45,7 @@ ENV_FILE="${SCRIPT_DIR}/.env.local"
 SECRET_AUTH="auth-secret"
 SECRET_ENTRA_SECRET="entra-client-secret"
 SECRET_SYSTEM_API_KEY="system-api-key"
+SECRET_FLEET="fleet-secret"
 
 USE_ACR_ADMIN="${USE_ACR_ADMIN:-0}"
 
@@ -127,6 +128,8 @@ ENTRA_ISSUER="$(env_value AUTH_MICROSOFT_ENTRA_ID_ISSUER)"
 ALLOWED_EMAIL="$(env_value ALLOWED_EMAIL)"
 SYSTEM_API_URL="$(env_value SYSTEM_API_URL)"
 SYSTEM_API_KEY="$(env_value SYSTEM_API_KEY)"
+FLEET_SECRET="$(env_value FLEET_SECRET)"
+CONSOLE_DEVICE_ID="$(env_value CONSOLE_DEVICE_ID)"
 AUTH_DISABLED="$(env_value AUTH_DISABLED)"
 SHOW_ALL_VIDEOS="$(env_value SHOW_ALL_VIDEOS)"
 
@@ -136,7 +139,8 @@ for pair in \
   "AUTH_MICROSOFT_ENTRA_ID_SECRET:$ENTRA_SECRET" \
   "AUTH_MICROSOFT_ENTRA_ID_ISSUER:$ENTRA_ISSUER" \
   "SYSTEM_API_URL:$SYSTEM_API_URL" \
-  "SYSTEM_API_KEY:$SYSTEM_API_KEY"
+  "SYSTEM_API_KEY:$SYSTEM_API_KEY" \
+  "FLEET_SECRET:$FLEET_SECRET"
 do
   name="${pair%%:*}"
   value="${pair#*:}"
@@ -152,6 +156,10 @@ do
 done
 
 ALLOWED_EMAIL="${ALLOWED_EMAIL:-chirag@dreamitcs.com}"
+
+# Labels the device token the console brokers for the config read; any value
+# matching the API's id pattern works.
+CONSOLE_DEVICE_ID="${CONSOLE_DEVICE_ID:-labelling-console}"
 
 # Anything other than an explicit "true" leaves sign-in enforced.
 if [ "$AUTH_DISABLED" = "true" ]; then
@@ -223,6 +231,17 @@ IMAGE="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${TAG}"
 
 info "Image: ${IMAGE}"
 
+# When Bash is running under WSL but Azure CLI is installed on Windows, pass
+# Windows paths to `az acr build`; the Windows CLI cannot resolve `/mnt/...`.
+BUILD_CONTEXT="$SCRIPT_DIR"
+DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
+
+if command -v wslpath >/dev/null 2>&1 &&
+   [[ "$(command -v az)" == /mnt/* ]]; then
+  BUILD_CONTEXT="$(wslpath -w "$BUILD_CONTEXT")"
+  DOCKERFILE="$(wslpath -w "$DOCKERFILE")"
+fi
+
 # --no-logs: the CLI streams the remote build log through the console
 # encoding, which on Windows cannot encode npm's output and aborts the deploy
 # even though the build succeeded.
@@ -230,10 +249,10 @@ if ! az acr build \
   --registry "$ACR_NAME" \
   --image "${IMAGE_REPOSITORY}:${TAG}" \
   --image "${IMAGE_REPOSITORY}:latest" \
-  --file "${SCRIPT_DIR}/Dockerfile" \
+  --file "$DOCKERFILE" \
   --no-logs \
   --output none \
-  "$SCRIPT_DIR"; then
+  "$BUILD_CONTEXT"; then
 
   printf '\n'
   info "Build failed. Show the log with:"
@@ -411,6 +430,7 @@ az containerapp secret set \
     "${SECRET_AUTH}=${AUTH_SECRET}" \
     "${SECRET_ENTRA_SECRET}=${ENTRA_SECRET}" \
     "${SECRET_SYSTEM_API_KEY}=${SYSTEM_API_KEY}" \
+    "${SECRET_FLEET}=${FLEET_SECRET}" \
   --only-show-errors >/dev/null
 
 az containerapp update \
@@ -425,6 +445,8 @@ az containerapp update \
     "AUTH_MICROSOFT_ENTRA_ID_ISSUER=${ENTRA_ISSUER}" \
     "ALLOWED_EMAIL=${ALLOWED_EMAIL}" \
     "SYSTEM_API_URL=${SYSTEM_API_URL}" \
+    "FLEET_SECRET=secretref:${SECRET_FLEET}" \
+    "CONSOLE_DEVICE_ID=${CONSOLE_DEVICE_ID}" \
     "AUTH_URL=${BASE_URL}" \
     "AUTH_TRUST_HOST=true" \
     "NODE_ENV=production" \

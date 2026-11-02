@@ -19,6 +19,9 @@ export const config = {
   // Everything except the auth endpoints, the login page and static assets.
   matcher: [
     '/annotation/:path*',
-    '/api/videos/:path*'
+    '/map/:path*',
+    '/api/videos/:path*',
+    '/api/stations/:path*',
+    '/api/stations-enriched'
   ]
 };

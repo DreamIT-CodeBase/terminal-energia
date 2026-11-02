@@ -4,6 +4,8 @@ Next.js annotation tool for the fuel price detection pipeline.
 
 - `/` — Microsoft sign-in. One account only.
 - `/annotation` — the annotation workspace, backed by Azure Blob Storage.
+- `/validation` — a read-only look at what the pipeline produced for a run.
+- `/map` — the forecourts the fleet drives to, on an interactive map.
 
 The UI never talks to Azure directly. Every storage read and write goes through
 the FastAPI service in [`../system-api`](../system-api), which holds the storage
@@ -26,8 +28,12 @@ centre of the screen shows.
    prune. Nothing is grabbed off the `<video>` element: the timestamp is sent to
    the system API, which decodes that exact frame from the stored clip at full
    quality and parks it in the working area.
-2. **Frames** — the frames captured so far. Opening one puts it on the canvas;
-   every box drawn on it is a price **board**.
+2. **Frames** — everything the video offers. What the pipeline already
+   extracted into `video-id/frames/` comes first, marked `pipeline`, followed
+   by anything captured from the clip, named by the moment it came from.
+   Opening one puts it on the canvas; every box drawn on it is a price
+   **board**. A pipeline frame cannot be discarded — it is source data, and
+   leaving it unlabelled already keeps it out of the dataset.
 3. **Boards** — every board box across every frame. Opening one shows its frame
    clipped to the board box, and every box drawn there is a **price region**.
    The price for each region is typed in the right sidebar, one row per region.
@@ -43,17 +49,50 @@ survive a page reload through a local draft scoped to the video id, and captured
 frames survive in the working area on the server.
 
 A video with no `video.mp4` has nothing to capture from, so it never appears in
-the queue.
+the queue, even if the pipeline extracted frames for it.
 
 There is only one project, so there is no project picker or project name — the
 video id is what scopes the work.
+
+## The station map
+
+`/map` edits the forecourts the fleet drives to — the same document the devices
+read on their next fetch, so a correction here reaches the fleet without a
+deploy. Three panes: every station on the left, searchable; the map in the
+middle; the selected station on the right.
+
+Marker colour is where the station came from, which its id records as a prefix:
+**surveyed** (cyan) was entered by a person, **detected** (amber) was found by a
+device that stopped somewhere unmapped, and grey came from the maps provider.
+
+- **Move** — select a station and drag its marker, or type coordinates. Only the
+  selected marker drags, so a stray drag cannot move a forecourt nobody is
+  looking at.
+- **Add** — the id follows the name (`Tartu Ringtee Neste` →
+  `surveyed:tartu-ringtee-neste`) and is shown before saving, because the id is
+  the key: an id that already exists would amend that station instead of adding
+  one, so the panel refuses to save onto a taken id.
+- **Board rows** — the `fuel_types` sequence, top to bottom, which is what
+  resolves the fuel the detector cannot read off a row. It is data, not
+  presentation: Räpina Olerex lists 98 before 95, so nothing sorts it.
+- **Remove** — final. The API's response carries the only remaining copy of the
+  entry, so the station's name has to be typed out first.
+
+Edits are local until saved, and the write merges server-side: a device
+upserting the same station between the load and the save keeps whatever fields
+the panel never touched. A station with no coordinates cannot be drawn, so it
+stays in the left rail marked as unplaced, which is where it gets a position.
+
+Tiles come from OpenStreetMap and are fetched by the browser, so the page needs
+outbound internet where it is opened. No API key or tile account is involved.
 
 ## Sign in
 
 Sign-in uses Auth.js (NextAuth v5) with the Microsoft Entra ID provider, and is
 restricted to `chirag@dreamitcs.com`. The address is checked twice: in the
 `signIn` callback, so no session cookie is ever issued for another account, and
-again in `proxy.ts` on every request to `/annotation` and `/api/videos/*`.
+again in `proxy.ts` on every request to `/annotation`, `/map` and the
+`/api/videos/*` and `/api/stations/*` routes.
 
 ### Azure app registration
 
@@ -127,11 +166,16 @@ with the service key attached.
 | `GET /api/videos/[videoId]/api-response` | `api_response.json` |
 | `GET /api/videos/[videoId]/file/[...path]` | Video bytes, range requests included |
 | `GET /api/videos/[videoId]/probe` | Duration, frame size and frame rate |
-| `GET /api/videos/[videoId]/frames` | Frames captured so far |
+| `GET /api/videos/[videoId]/frames` | Every frame on offer, pipeline and captured |
 | `POST /api/videos/[videoId]/frames` | Capture frames at the given timestamps |
-| `GET /api/videos/[videoId]/frames/[frameName]/file` | Bytes of one captured frame |
+| `GET /api/videos/[videoId]/frames/[frameName]/file` | Bytes of one frame |
 | `DELETE /api/videos/[videoId]/frames/[frameName]` | Discard one captured frame |
 | `POST /api/videos/[videoId]/submit` | File the video into this week |
+| `GET /api/stations` | Every station, with the document's etag |
+| `GET /api/stations-enriched` | Enriched station fuel types for validation |
+| `PUT /api/stations-enriched` | Upsert enriched fuel types by latitude/longitude |
+| `PUT /api/stations/[stationId]` | Create or amend one station |
+| `DELETE /api/stations/[stationId]` | Remove one station |
 
 ## Docker
 

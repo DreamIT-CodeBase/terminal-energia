@@ -14,6 +14,7 @@ import {
 
 import { UpperToolbar } from '../Toolbar/UpperToolbar';
 import { LeftSidebar } from '../Sidebar/LeftSidebar';
+import { ReferencePanel } from '../Sidebar/ReferencePanel';
 import { RightSidebar } from '../Sidebar/RightSidebar';
 import { VideoStage } from '../Video/VideoStage';
 import { DynamicCanvas } from '../Canvas/DynamicCanvas';
@@ -72,7 +73,8 @@ const toFrame = (
 ): CapturedFrame => ({
   name: record.name,
   path: record.path,
-  timestampMs: record.timestamp_ms,
+  origin: record.origin ?? 'captured',
+  timestampMs: record.timestamp_ms ?? null,
   width: record.width,
   height: record.height,
   size: record.size
@@ -140,9 +142,9 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
   // ============================================================
   // OPEN ONE VIDEO
   //
-  // A video is the whole job: the clip, the frames already
-  // captured from it, and whatever was drawn on them but not
-  // yet submitted.
+  // A video is the whole job: the clip, every frame it offers --
+  // what the pipeline extracted plus anything captured on top --
+  // and whatever was drawn on them but not yet submitted.
   // ============================================================
 
   const openVideo = useCallback(
@@ -175,28 +177,10 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
 
         // --------------------------------------------------
-        // THE CLIP
+        // FRAMES ON OFFER
         //
-        // A probe that fails is not fatal: the browser reports
-        // the duration once the video element has metadata.
-        // --------------------------------------------------
-
-        let probedDurationMs = 0;
-
-        const probeResponse = await fetch(
-          `/api/videos/${encodeURIComponent(nextVideoId)}/probe`,
-          { cache: 'no-store' }
-        );
-
-        if (probeResponse.ok) {
-          const probe: VideoProbe = await probeResponse.json();
-          probedDurationMs = probe.duration_ms;
-          setFps(probe.fps);
-        }
-
-
-        // --------------------------------------------------
-        // FRAMES ALREADY CAPTURED
+        // What the pipeline extracted, followed by anything
+        // captured from the clip. The API returns both.
         // --------------------------------------------------
 
         const framesResponse = await fetch(
@@ -208,17 +192,17 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
           throw new Error(await readError(framesResponse));
         }
 
-        const captured: { frames?: CapturedFrameRecord[] } =
+        const listing: { frames?: CapturedFrameRecord[] } =
           await framesResponse.json();
 
-        const nextFrames = (captured.frames ?? []).map(toFrame);
+        const nextFrames = (listing.frames ?? []).map(toFrame);
 
 
         // --------------------------------------------------
         // WHAT WAS DRAWN BUT NOT SUBMITTED
         //
-        // The frames live on the server, the boxes do not, so a
-        // draft only has to carry the boxes and their prices.
+        // The frames live in storage either way, the boxes do
+        // not, so a draft carries only the boxes and prices.
         // --------------------------------------------------
 
         const draft = readDraft(nextVideoId);
@@ -238,11 +222,45 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
         loadVideo(
           nextVideoId,
-          probedDurationMs,
+          0,
           nextFrames,
           nextBoards,
           nextRegions
         );
+
+
+        // --------------------------------------------------
+        // THE CLIP, IN THE BACKGROUND
+        //
+        // Probing means downloading the whole clip to read its
+        // header, which on a 4K video is slow enough to be felt
+        // -- and none of the labelling work needs it. So it is
+        // deliberately not awaited: the workspace is usable the
+        // moment the frames are in, and the frame rate fills in
+        // when it arrives. If it never does, the browser reports
+        // the duration itself once the video element has
+        // metadata, and only the frame-step size is approximate.
+        // --------------------------------------------------
+
+        fetch(
+          `/api/videos/${encodeURIComponent(nextVideoId)}/probe`,
+          { cache: 'no-store' }
+        )
+          .then(async response => {
+
+            if (!response.ok) return;
+
+            const probe: VideoProbe = await response.json();
+
+            // The labeller may have moved on while this was in flight.
+            if (useAnnotationStore.getState().videoId !== nextVideoId) return;
+
+            setFps(probe.fps);
+            setDurationMs(probe.duration_ms);
+          })
+          .catch(() => {
+            // Nothing here is load-bearing.
+          });
 
 
         // --------------------------------------------------
@@ -277,7 +295,7 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
         setIsLoadingVideo(false);
       }
     },
-    [loadVideo, readDraft]
+    [loadVideo, readDraft, setDurationMs]
   );
 
 
@@ -417,8 +435,8 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
       }
 
       setStatusMessage(
-        result.captured.length === 1
-          ? `Captured ${formatTimestamp(result.captured[0].timestamp_ms)}.`
+        result.captured.length === 1 && landing?.timestamp_ms !== null
+          ? `Captured ${formatTimestamp(landing.timestamp_ms as number)}.`
           : `Captured ${result.captured.length} frames.`
       );
 
@@ -727,11 +745,22 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
 
         {/* LEFT: video, frames, boards */}
 
-        <LeftSidebar
-          hasVideo={hasVideo}
-          isCapturing={isCapturing}
-          onDeleteFrame={handleDeleteFrame}
-        />
+        <div className="relative h-full shrink-0">
+
+          <LeftSidebar
+            hasVideo={hasVideo}
+            isCapturing={isCapturing}
+            onDeleteFrame={handleDeleteFrame}
+          />
+
+          {/* Slides out over the canvas from this pane's outer edge */}
+          <ReferencePanel
+            videoId={videoId}
+            crops={assets?.folders?.crops ?? []}
+            prepped={assets?.folders?.prepped ?? []}
+          />
+
+        </div>
 
 
         {/* CENTRE: whichever of the three is selected */}
@@ -749,7 +778,11 @@ export const AnnotationWorkspace: React.FC<AnnotationWorkspaceProps> = ({
                 durationMs={durationMs}
                 fps={fps}
                 isCapturing={isCapturing}
-                capturedTimestamps={frames.map(frame => frame.timestampMs)}
+                capturedTimestamps={
+                  frames
+                    .map(frame => frame.timestampMs)
+                    .filter((ms): ms is number => ms !== null)
+                }
                 onCapture={handleCapture}
                 onDurationKnown={setDurationMs}
               />

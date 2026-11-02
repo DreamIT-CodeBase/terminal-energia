@@ -16,14 +16,16 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-import { VideoAssets, VideoAssetName } from '../../types';
+import { Station, VideoAssets, VideoAssetName } from '../../types';
 
 import {
   belongsToValidationFolder,
   compareCrops,
   cropFileUrl,
+  EnrichedStation,
   parseCropMeta,
   readError,
+  STATION_COORDINATE_TOLERANCE,
   VALIDATION_FROM_DATE
 } from './shared';
 
@@ -60,6 +62,8 @@ export const ValidationWorkspace: React.FC<ValidationWorkspaceProps> = ({
 
   const [crops, setCrops] = useState<VideoAssetName[]>([]);
   const [apiResponse, setApiResponse] = useState<unknown>(null);
+  const [stationMapping, setStationMapping] = useState<Station[]>([]);
+  const [enrichedStations, setEnrichedStations] = useState<EnrichedStation[]>([]);
 
   const [isLoadingRuns, setIsLoadingRuns] = useState(true);
   const [isLoadingCrops, setIsLoadingCrops] = useState(false);
@@ -185,6 +189,98 @@ export const ValidationWorkspace: React.FC<ValidationWorkspaceProps> = ({
       loadRuns();
     },
     [loadRuns]
+  );
+
+
+  useEffect(
+    () => {
+
+      let cancelled = false;
+
+      const cached = window.localStorage.getItem('fp-validation:stations');
+
+      if (cached) {
+        try {
+          const data: { stations?: Station[] } = JSON.parse(cached);
+          // Restore the cached mapping before the network refresh completes.
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setStationMapping(data.stations ?? []);
+        } catch {
+          window.localStorage.removeItem('fp-validation:stations');
+        }
+      }
+
+      fetch('/api/stations', { cache: 'no-store' })
+        .then(async response => {
+          if (!response.ok) {
+            throw new Error(await readError(response));
+          }
+
+          const data: { stations?: Station[] } = await response.json();
+
+          try {
+            window.localStorage.setItem(
+              'fp-validation:stations',
+              JSON.stringify(data)
+            );
+          } catch {
+            // Browser storage is optional; the mapping endpoint remains usable.
+          }
+
+          if (!cancelled) {
+            setStationMapping(data.stations ?? []);
+          }
+        })
+        .catch(error => {
+          console.error('Station mapping cache error:', error);
+        });
+
+      fetch('/api/stations-enriched', { cache: 'no-store' })
+        .then(async response => {
+          if (!response.ok) {
+            throw new Error(await readError(response));
+          }
+
+          const data: { stations?: EnrichedStation[] } = await response.json();
+
+          if (!cancelled) {
+            setEnrichedStations(data.stations ?? []);
+          }
+        })
+        .catch(error => {
+          // Enriched data is optional. The response JSON remains the fallback.
+          console.error('Enriched station list error:', error);
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    },
+    []
+  );
+
+  const updateEnrichedStation = useCallback(
+    (updated: EnrichedStation) => {
+      setEnrichedStations(current => {
+        const index = current.findIndex(station =>
+          typeof station.latitude === 'number' &&
+          typeof station.longitude === 'number' &&
+          typeof updated.latitude === 'number' &&
+          typeof updated.longitude === 'number' &&
+          Math.abs(station.latitude - updated.latitude) <=
+            STATION_COORDINATE_TOLERANCE &&
+          Math.abs(station.longitude - updated.longitude) <=
+            STATION_COORDINATE_TOLERANCE
+        );
+
+        return index < 0
+          ? [...current, updated]
+          : current.map((station, stationIndex) =>
+              stationIndex === index ? updated : station
+            );
+      });
+    },
+    []
   );
 
 
@@ -552,6 +648,9 @@ export const ValidationWorkspace: React.FC<ValidationWorkspaceProps> = ({
           videoId={selectedId}
           isLoading={Boolean(selectedId) && isLoadingResponse}
           hasSelection={Boolean(selectedId)}
+          stations={enrichedStations}
+          stationMapping={stationMapping}
+          onEnrichedStationSaved={updateEnrichedStation}
         />
 
       </div>

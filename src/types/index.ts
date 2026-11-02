@@ -14,14 +14,27 @@ export type WorkspaceSection = 'video' | 'frames' | 'boards';
 // One video at a time. Everything below hangs off it.
 // ============================================================
 
-/** A moment taken out of the source clip and stored in the working area. */
+/**
+ * Where a frame came from. `source` is what the pipeline already extracted
+ * into `video-id/frames/`, which is read only; `captured` is what the labeller
+ * took out of the clip.
+ */
+export type FrameOrigin = 'source' | 'captured';
+
+
+/** One frame a video offers for labelling. */
 export interface CapturedFrame {
-  // File name in the working area, e.g. `t00012340.png`. Derived from the
-  // timestamp, so capturing the same moment twice is not a duplicate.
+  // File name. A capture is `t00012340.png`, derived from its timestamp, so
+  // taking the same moment twice is not a duplicate. A pipeline frame is
+  // whatever the pipeline called it, usually `frame_00007.png`.
   name: string;
   path: string;
-  timestampMs: number;
-  // Natural pixel size, filled in by the API and confirmed by the canvas.
+  origin: FrameOrigin;
+  // Only a capture knows the moment it came from: a pipeline frame is named
+  // after a frame index, which cannot be turned back into a time reliably.
+  timestampMs: number | null;
+  // Natural pixel size, filled in by the API where it knows it and confirmed
+  // by the canvas once the frame is drawn.
   width: number;
   height: number;
   size: number;
@@ -152,11 +165,12 @@ export interface VideoProbe {
   fps: number | null;
 }
 
-/** Wire format of one captured frame. */
+/** Wire format of one frame. */
 export interface CapturedFrameRecord {
   name: string;
   path: string;
-  timestamp_ms: number;
+  origin: FrameOrigin;
+  timestamp_ms: number | null;
   width: number;
   height: number;
   size: number;
@@ -171,4 +185,70 @@ export interface SubmitResult {
   boards_without_regions: number;
   skipped: string[];
   saved_at: string;
+}
+
+
+// ============================================================
+// STATION MAPPING
+//
+// The forecourts the fleet drives to, edited on /map and stored
+// as one JSON document behind the system API. Field names are the
+// wire names, snake_case, so a record round-trips unchanged.
+// ============================================================
+
+/** One forecourt as stored. */
+export interface Station {
+  // The key. Ids carry their provenance as a prefix: `surveyed:` for one
+  // entered by hand, `detected:` for one a device found. A bare id came from
+  // the maps provider. Nothing parses the prefix; it is there to be read.
+  id: string;
+  name: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  // Operator, as the maps provider spells it.
+  brand: string | null;
+  // Epoch milliseconds, stamped by the server on every write.
+  modified_time: number | null;
+  // Top-to-bottom order of the rows on the price board, so a code's position
+  // in this list is its row number. Never sort it. Absent when nobody has
+  // surveyed the board on foot, which is most stations.
+  fuel_types: string[] | null;
+  note: string | null;
+}
+
+export interface StationListResponse {
+  version: number;
+  count: number;
+  // Changes whenever the stored document does.
+  etag: string | null;
+  stations: Station[];
+}
+
+/**
+ * The fields to write. Anything omitted keeps its stored value: the API
+ * merges rather than replaces, so an edit here cannot blank out a field it
+ * never showed.
+ */
+export interface StationWrite {
+  name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  brand?: string | null;
+  fuel_types?: string[] | null;
+  note?: string | null;
+}
+
+export interface StationUpsertResponse {
+  created: boolean;
+  station: Station;
+  etag: string | null;
+  count: number;
+}
+
+export interface StationDeleteResponse {
+  deleted: boolean;
+  // The entry as it stood. Nothing else keeps a copy.
+  station: Station;
+  etag: string | null;
+  count: number;
 }

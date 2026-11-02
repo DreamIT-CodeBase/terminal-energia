@@ -1,5 +1,19 @@
 import { VideoAssetName } from '../../types';
 
+export interface EnrichedFuelType {
+  row_num: number;
+  fuel_type: string;
+}
+
+export interface EnrichedStation {
+  latitude: number | null;
+  longitude: number | null;
+  name?: string | null;
+  fuel_types?: Array<string | EnrichedFuelType> | null;
+}
+
+export const STATION_COORDINATE_TOLERANCE = 0.001;
+
 
 // ============================================================
 // VALIDATION HELPERS
@@ -74,6 +88,175 @@ export const readError = async (
   }
 
   return `Request failed with status ${response.status}.`;
+};
+
+
+const isFiniteNumber = (
+  value: unknown
+): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+
+const responseCoordinates = (
+  response: unknown
+): { latitude: number; longitude: number } | null => {
+
+  if (response === null || typeof response !== 'object') return null;
+
+  const root = response as Record<string, unknown>;
+  const station =
+    root.station !== null && typeof root.station === 'object'
+      ? root.station as Record<string, unknown>
+      : null;
+  const location =
+    root.location !== null && typeof root.location === 'object'
+      ? root.location as Record<string, unknown>
+      : null;
+
+  const candidates = [station, location, root];
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      isFiniteNumber(candidate.latitude) &&
+      isFiniteNumber(candidate.longitude)
+    ) {
+      return {
+        latitude: candidate.latitude,
+        longitude: candidate.longitude
+      };
+    }
+  }
+
+  return null;
+};
+
+
+/**
+ * Validation responses normally carry the matched forecourt under `station`.
+ * Older responses may only carry capture GPS coordinates under `location`, or
+ * coordinates at the response root. A station is considered the same
+ * forecourt when both coordinates are within 0.001 degrees. The first
+ * coordinate match in the stored list wins.
+ */
+export const findStationByCoordinates = <T extends {
+  latitude: number | null;
+  longitude: number | null;
+}>(
+  response: unknown,
+  stations: T[],
+  tolerance = STATION_COORDINATE_TOLERANCE
+): T | null => {
+
+  const coordinates = responseCoordinates(response);
+
+  if (!coordinates) return null;
+
+  return stations.find(station =>
+    isFiniteNumber(station.latitude) &&
+    isFiniteNumber(station.longitude) &&
+    Math.abs(station.latitude - coordinates.latitude) <= tolerance &&
+    Math.abs(station.longitude - coordinates.longitude) <= tolerance
+  ) ?? null;
+};
+
+
+export const stationNameFromResponse = (
+  response: unknown
+): string | null => {
+
+  if (response === null || typeof response !== 'object') return null;
+
+  const station = (response as Record<string, unknown>).station;
+
+  if (station === null || typeof station !== 'object') return null;
+
+  const name = (station as Record<string, unknown>).name;
+
+  return typeof name === 'string' && name.trim() !== ''
+    ? name.trim()
+    : null;
+};
+
+
+export const coordinatesFromResponse = responseCoordinates;
+
+
+const hasRows = (
+  value: unknown
+): value is Record<string, unknown> => {
+
+  if (value === null || typeof value !== 'object') return false;
+
+  const fuelPrices = (value as Record<string, unknown>).fuel_prices;
+
+  return Array.isArray(fuelPrices) && fuelPrices.length > 0;
+};
+
+
+/**
+ * Prefill fuel names on the first board that has rows. When the detector
+ * returns a different number of rows, known names are applied top-to-bottom
+ * until either list runs out; the remaining response values stay editable.
+ */
+export const applyStationFuelTypes = (
+  response: unknown,
+  fuelTypes: Array<string | EnrichedFuelType> | null | undefined
+): unknown => {
+
+  if (!Array.isArray(fuelTypes) || response === null || typeof response !== 'object') {
+    return response;
+  }
+
+  const root = JSON.parse(JSON.stringify(response)) as Record<string, unknown>;
+  const boards = root.boards;
+
+  if (!Array.isArray(boards)) return response;
+
+  const board = boards.find(hasRows);
+
+  if (!board) return response;
+
+  const rows = board.fuel_prices;
+
+  if (!Array.isArray(rows)) return response;
+
+  const namesByRow = new Map(
+    fuelTypes.map((item, index) => [
+      typeof item === 'string' ? index + 1 : item.row_num,
+      typeof item === 'string' ? item : item.fuel_type
+    ])
+  );
+
+  rows.forEach((row, index) => {
+    if (row === null || typeof row !== 'object') return;
+
+    const rowObject = row as Record<string, unknown>;
+    const responseRow = typeof rowObject.row_num === 'number'
+      ? rowObject.row_num
+      : index + 1;
+    const fuelType = namesByRow.get(responseRow);
+
+    if (fuelType !== undefined) {
+      rowObject.fuel_type = fuelType;
+    }
+  });
+
+  return root;
+};
+
+
+export const firstBoardWithFuelPriceRowsIndex = (
+  response: unknown
+): number => {
+
+  if (response === null || typeof response !== 'object') return -1;
+
+  const boards = (response as Record<string, unknown>).boards;
+
+  return Array.isArray(boards)
+    ? boards.findIndex(hasRows)
+    : -1;
 };
 
 

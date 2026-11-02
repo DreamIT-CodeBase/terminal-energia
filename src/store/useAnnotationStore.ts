@@ -173,6 +173,23 @@ export const formatTimestamp = (
 };
 
 
+/**
+ * How a frame is named on screen. A capture is known by the moment it came
+ * from; a pipeline frame only has its file name, so the extension is dropped
+ * and the rest is shown as it is.
+ */
+export const frameLabel = (
+  frame: CapturedFrame
+): string => {
+
+  if (frame.timestampMs !== null) {
+    return formatTimestamp(frame.timestampMs);
+  }
+
+  return frame.name.replace(/\.[^.]+$/, '');
+};
+
+
 export const boardLabel = (
   boards: BoardBox[],
   board: BoardBox,
@@ -186,7 +203,7 @@ export const boardLabel = (
       .filter(item => item.frameName === board.frameName)
       .findIndex(item => item.id === board.id) + 1;
 
-  const at = frame ? formatTimestamp(frame.timestampMs) : board.frameName;
+  const at = frame ? frameLabel(frame) : board.frameName;
 
   return `${at} · board ${position}`;
 };
@@ -275,7 +292,7 @@ const buildView = (
       images: [
         {
           id: imageId,
-          name: `${formatTimestamp(frame.timestampMs)}`,
+          name: frameLabel(frame),
           width: frame.width,
           height: frame.height,
           url: frameUrl(videoId, frame.name),
