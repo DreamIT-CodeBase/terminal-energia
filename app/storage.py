@@ -18,6 +18,7 @@ from app.config import (
     ANNOTATIONS_DIR,
     IMAGE_FOLDERS,
     SNAPSHOTS_PREFIX,
+    UPDATED_API_RESPONSE_FILE,
     VIDEO_FILE,
     WORKING_PREFIX,
     get_annotated_container,
@@ -214,7 +215,7 @@ def list_video_assets(
 
         relative = blob.name[len(prefix):]
 
-        if relative == API_RESPONSE_FILE:
+        if relative in {API_RESPONSE_FILE, UPDATED_API_RESPONSE_FILE}:
             has_api_response = True
             continue
 
@@ -387,20 +388,48 @@ def read_api_response(
     video_id: str
 ) -> dict | list | None:
 
-    result = download_source_blob(
-        f"{video_id}/{API_RESPONSE_FILE}"
+    for file_name in (UPDATED_API_RESPONSE_FILE, API_RESPONSE_FILE):
+        result = download_source_blob(f"{video_id}/{file_name}")
+
+        if result is None:
+            continue
+
+        data, _ = result
+
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+
+        if isinstance(payload, (dict, list)):
+            return payload
+
+    return None
+
+
+def save_updated_api_response(
+    video_id: str,
+    response: dict | list,
+) -> str:
+    """Write a labelling correction beside the source API response."""
+
+    from azure.storage.blob import ContentSettings
+
+    blob_path = f"{video_id}/{UPDATED_API_RESPONSE_FILE}"
+    payload = json.dumps(
+        response,
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+
+    get_source_container().upload_blob(
+        name=blob_path,
+        data=payload,
+        overwrite=True,
+        content_settings=ContentSettings(content_type="application/json"),
     )
 
-    if result is None:
-        return None
-
-    data, _ = result
-
-    try:
-        return json.loads(data.decode("utf-8"))
-
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return None
+    return blob_path
 
 
 def read_saved_annotations(

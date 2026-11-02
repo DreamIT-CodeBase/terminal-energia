@@ -18,21 +18,31 @@ browser  ──►  labelling-ui (Next.js, Microsoft login)  ──►  system-a
 
 ## Containers
 
-**Source — `debugdirectory`** (read only)
+**Source — `debugdirectory`** (pipeline output is read only; corrected API
+responses are written by the labelling API)
 
 ```
-video-id/video.mp4        what labelling works from
+video-id/frames/          offered for labelling as they are
+video-id/video.mp4        more frames can be cut from this on demand
 video-id/api_response.json
-video-id/frames/          left over from the pipeline, not used for labelling
-video-id/crops/           ditto
+video-id/updated_api_response.json
+video-id/crops/           pipeline output, not used for labelling
 video-id/prepped/         ditto
 ```
 
-`video.mp4` is the only thing labelling needs. Frames are decoded out of it on
-request rather than taken from `frames/`, so the labeller picks the moments
-worth annotating instead of inheriting whatever the pipeline extracted. A video
-without a `video.mp4` cannot be labelled, and `GET /videos` reports that as
-`has_video: false`.
+A video offers two kinds of frame, and `GET /videos/{id}/frames` returns both
+in one listing with an `origin` on each.
+
+`source` frames are what the pipeline already extracted into `frames/`. They
+are read only, and their names carry a frame index rather than a time, so they
+have no timestamp.
+
+`captured` frames are cut from `video.mp4` on request, at whatever moment the
+labeller picks, and land in the working area.
+
+A video with no `video.mp4` cannot have frames captured from it, and
+`GET /videos` reports that as `has_video: false`; the UI keeps those out of the
+queue.
 
 **Destination — `debugdirectoryannotated`** (written by this API)
 
@@ -79,19 +89,57 @@ Every `/videos` route requires the `x-api-key` header.
 | `GET` | `/health` | Liveness check |
 | `GET` | `/videos` | Every video id, with `annotated` and `has_video` flags |
 | `GET` | `/videos/{video_id}` | Images grouped by folder, plus `api_response.json` / `video.mp4` presence |
-| `GET` | `/videos/{video_id}/api-response` | Parsed `api_response.json` |
+| `GET` | `/videos/{video_id}/api-response` | Parsed response; returns `updated_api_response.json` when present, otherwise the original |
+| `PUT` | `/videos/{video_id}/updated-api-response` | Store the corrected response in `debugdirectory/{video_id}/updated_api_response.json` |
 | `GET` | `/videos/{video_id}/file/{blob_path}` | Raw bytes of one blob (image or video), range requests supported |
 | `GET` | `/videos/{video_id}/probe` | Duration, frame size and frame rate of `video.mp4` |
-| `GET` | `/videos/{video_id}/frames` | Frames captured so far, in the working area |
+| `GET` | `/videos/{video_id}/frames` | Every frame on offer, pipeline and captured, each with its `origin` |
 | `POST` | `/videos/{video_id}/frames` | Decode and store frames at the given timestamps |
-| `GET` | `/videos/{video_id}/frames/{name}/file` | Bytes of one captured frame |
-| `DELETE` | `/videos/{video_id}/frames/{name}` | Discard one captured frame |
+| `GET` | `/videos/{video_id}/frames/{name}/file` | Bytes of one frame, from wherever it lives |
+| `DELETE` | `/videos/{video_id}/frames/{name}` | Discard one captured frame. Refuses a pipeline frame |
 | `POST` | `/videos/{video_id}/submit` | File the whole video into this week |
 | `GET` | `/videos/{video_id}/annotations` | Previously saved `annotations.json` (legacy single-pass flow) |
 | `POST` | `/videos/{video_id}/annotations` | Save annotated images and YOLO labels (legacy single-pass flow) |
 
 Image bytes are streamed through the API rather than handed out as SAS URLs, so
 no CORS rule is needed on the storage account and access stays behind the login.
+
+## Station endpoints
+
+The forecourts the fleet drives to, held as one JSON document at
+`configurations/stations-data/stations.json`. The labelling UI edits them on
+`/map`; every route requires the `x-api-key` header.
+
+Validation-only fuel-type names are read from the separate
+`configurations/stations-data/stations-enriched.json` document. The validation
+page updates this enriched document through the coordinate-based endpoint;
+the regular station mapping remains separate.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/stations` | Every station, with the document's `etag` |
+| `GET` | `/stations-enriched` | Enriched station fuel types for validation |
+| `PUT` | `/stations-enriched` | Upsert enriched fuel types by latitude/longitude |
+| `PUT` | `/stations/{station_id}` | Create or amend one station, keyed by id |
+| `DELETE` | `/stations/{station_id}` | Remove one station. `404` if there was nothing to remove |
+
+The fleet reaches the same document under
+[`/v1/stations`](#device-api-v1) with a device token instead. Both sets of
+routes call `app/station_ops.py`, so they cannot validate differently, and the
+credentials stay separate: the fleet secret never has to leave the fleet, and a
+console edit is never mistaken for a device reporting what it found.
+
+A `PUT` **merges**. Anything the body leaves out keeps its stored value, so a
+device that knows only a better position cannot blank out a `fuel_types`
+sequence someone surveyed on foot; send a field as `null` to clear it. `id`
+comes from the path and `modified_time` is stamped by the server. The write is
+conditional on the etag that was read, so a console edit and a device upsert
+landing together cannot lose each other's work -- the loser re-reads and
+reapplies, and gives up with `429` if it keeps losing.
+
+`fuel_types` is the board's row order, top to bottom, so a code's position in
+it is its row number. It is data, not presentation: Räpina Olerex lists 98
+before 95. Never sort it.
 
 ### Capturing frames
 
@@ -131,6 +179,10 @@ One request closes out a whole video.
   "savedBy": "chirag@dreamitcs.com"
 }
 ```
+
+A frame is named the way the listing named it, and where its bytes come from
+is resolved server side, so a pipeline frame and a capture are submitted
+identically. The record notes which each was.
 
 Coordinates are normalised to `0-1` as `[x, y, w, h]` with `x, y` at the
 top-left; the API converts them to YOLO centre form on write. A board box is

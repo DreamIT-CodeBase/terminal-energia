@@ -29,6 +29,8 @@ from fastapi import (
 from app.config import (
     ARTIFACTS_CONTAINER,
     ARTIFACT_SAS_TTL_SECONDS,
+    DEVICE_CONFIG_BLOB,
+    DEVICE_CONFIG_CONTAINER,
     MODEL_CONTAINERS,
     MODEL_SAS_TTL_SECONDS,
     RUN_MANIFEST_FILE,
@@ -42,7 +44,11 @@ from app.sas import (
 
 from app.schemas import (
     ArtifactUploadResponse,
+    DeviceConfigResponse,
+    StationDeleteResponse,
     StationListResponse,
+    StationUpsertRequest,
+    StationUpsertResponse,
     CompleteRunRequest,
     CompleteRunResponse,
     DeviceTokenRequest,
@@ -50,7 +56,11 @@ from app.schemas import (
     ModelDownloadResponse,
 )
 
-from app.stations import load_stations
+from app.station_ops import (
+    delete_station_response,
+    list_stations_response,
+    upsert_station_response,
+)
 
 from app.storage import (
     is_safe_blob_path,
@@ -378,6 +388,10 @@ def get_model(
 
 # ============================================================
 # 5. STATION MAPPING
+#
+# The handling lives in `app.station_ops`, shared with the
+# console router that exposes the same document under
+# `/stations` to the labelling UI. Only the credential differs.
 # ============================================================
 
 @router.get(
@@ -385,23 +399,144 @@ def get_model(
     response_model=StationListResponse,
     summary="Forecourts, their coordinates and their board row order",
     description=(
-        "The detector reports a price per board row but cannot read which "
-        "fuel that row is for, so `fuel_type` comes back as `Unknown`. This "
-        "mapping resolves it: the position of a code in `fuel_types` is the "
-        "row number, counting from the top. "
-        "The order is data, not presentation -- Rapina Olerex lists 98 "
-        "before 95, so the sequence must never be sorted. An empty "
-        "`fuel_types` means the sequence is not known for that station."
+        "Read from `configurations/stations-data/stations.json`, which the "
+        "fleet also writes to, so this is the live list rather than one "
+        "baked into the image. "
+        "Where a station carries `fuel_types`, the position of a code in it "
+        "is the board row, counting from the top -- that is what resolves "
+        "the `Unknown` the detector reports, since it reads a price per row "
+        "but not which fuel the row is for. The order is data, not "
+        "presentation: Rapina Olerex lists 98 before 95, so it must never be "
+        "sorted. Absent or empty means the sequence is not known, which is "
+        "the case for every station nobody has surveyed on foot."
     ),
 )
 def list_stations(
     device_id: str = Depends(require_device),
 ):
 
-    stations = load_stations()
+    return list_stations_response()
 
-    return StationListResponse(
-        version=1,
-        count=len(stations),
-        stations=stations,
+
+@router.put(
+    "/stations/{station_id}",
+    response_model=StationUpsertResponse,
+    summary="Create or amend one station, keyed by id",
+    description=(
+        "Reads the stored document, replaces the entry with this `id` -- or "
+        "appends it if there is none -- and writes the whole document back. "
+        "A device that stops somewhere unmapped uses this to record the "
+        "forecourt it found. "
+        "Fields are **merged**, not replaced: anything omitted keeps its "
+        "stored value, so a device reporting a better position cannot blank "
+        "out a `fuel_types` sequence someone surveyed by hand. "
+        "The write is conditional on the etag that was read, so two devices "
+        "writing at once cannot lose each other's work; the loser re-reads "
+        "and reapplies."
+    ),
+)
+def put_station(
+    station_id: str,
+    body: StationUpsertRequest,
+    device_id: str = Depends(require_device),
+):
+
+    return upsert_station_response(station_id, body)
+
+
+@router.delete(
+    "/stations/{station_id}",
+    response_model=StationDeleteResponse,
+    summary="Remove one station, keyed by id",
+    description=(
+        "Reads the stored document, drops the entry with this `id`, and "
+        "writes the whole document back. Like the upsert, the write is "
+        "conditional on the etag that was read, so a delete cannot silently "
+        "revert someone else's concurrent change. "
+        "A station that is not there is a `404`, not a quiet success -- the "
+        "caller is told nothing was removed."
+    ),
+)
+def remove_station(
+    station_id: str,
+    device_id: str = Depends(require_device),
+):
+
+    return delete_station_response(station_id)
+
+
+# ============================================================
+# 6. DEVICE CONFIGURATION
+#
+# The tunables the app used to compile in. Holding them in one
+# blob means the fleet can be re-tuned without a release.
+# ============================================================
+
+@router.get(
+    "/config",
+    response_model=DeviceConfigResponse,
+    summary="The device configuration document",
+    description=(
+        "Returns `configurations/device-config/device-config.default.json` "
+        "from blob storage whole. "
+        "The `config` object is passed through unvalidated, so a new tunable "
+        "reaches the fleet by editing the blob rather than by releasing the "
+        "server. `etag` changes whenever the document does, which is what a "
+        "device should cache against."
+    ),
+)
+def get_device_config(
+    device_id: str = Depends(require_device),
+):
+
+    blob_client = (
+        get_blob_service_client()
+        .get_container_client(DEVICE_CONFIG_CONTAINER)
+        .get_blob_client(DEVICE_CONFIG_BLOB)
+    )
+
+    try:
+        downloader = blob_client.download_blob()
+        raw = downloader.readall()
+
+    except ResourceNotFoundError as exc:
+        # 404 is permanent: the blob is missing, so retrying cannot help.
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No configuration at "
+                f"'{DEVICE_CONFIG_CONTAINER}/{DEVICE_CONFIG_BLOB}'."
+            ),
+        ) from exc
+
+    try:
+        document = json.loads(raw)
+
+    except ValueError as exc:
+        # Bad content is the server's problem, not the device's, so this is a
+        # 5xx and the device is right to retry -- the blob may be mid-edit.
+        raise HTTPException(
+            status_code=502,
+            detail="The stored configuration is not valid JSON.",
+        ) from exc
+
+    if not isinstance(document, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="The stored configuration is not a JSON object.",
+        )
+
+    properties = downloader.properties
+
+    last_modified = properties.last_modified
+
+    return DeviceConfigResponse(
+        config_id=document.get("config_id"),
+        schema_version=document.get("schema_version"),
+        updated_at=document.get("updated_at"),
+        etag=(properties.etag or "").strip('"') or None,
+        last_modified=(
+            last_modified.isoformat() if last_modified else None
+        ),
+        config=document,
     )

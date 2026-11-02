@@ -44,6 +44,12 @@ class VideoAssetsResponse(BaseModel):
     video_path: str | None
 
 
+class UpdatedApiResponseSaveResponse(BaseModel):
+    video_id: str
+    blob_path: str
+    saved: bool
+
+
 # ============================================================
 # ANNOTATIONS
 # ============================================================
@@ -166,8 +172,17 @@ class VideoProbeResponse(BaseModel):
 class CapturedFrame(BaseModel):
     name: str
     path: str
-    # The moment in the clip this frame was taken from.
-    timestamp_ms: int
+
+    # Where the frame came from. `source` is what the pipeline already
+    # extracted into video-id/frames/, which is read only; `captured` is what
+    # the labeller took from the clip, and lives in the working area.
+    origin: Literal["source", "captured"] = "captured"
+
+    # The moment in the clip this frame was taken from. Only a captured frame
+    # knows it: a pipeline frame is named after a frame index, and the index
+    # cannot be turned back into a time reliably.
+    timestamp_ms: int | None = None
+
     width: int = 0
     height: int = 0
     size: int = 0
@@ -216,9 +231,10 @@ class SubmitBoard(BaseModel):
 
 
 class SubmitFrame(BaseModel):
-    # File name in the working area, e.g. t00012340.png.
+    # File name, e.g. t00012340.png for a capture or frame_00007.png for one
+    # the pipeline extracted. Where its bytes live is resolved server side.
     name: str
-    timestamp_ms: int = Field(default=0, alias="timestampMs")
+    timestamp_ms: int | None = Field(default=None, alias="timestampMs")
     width: int = 0
     height: int = 0
 
@@ -316,24 +332,133 @@ class ModelDownloadResponse(BaseModel):
 
 
 # ============================================================
+# DEVICE CONFIGURATION
+# ============================================================
+
+class DeviceConfigResponse(BaseModel):
+    """The stored document, handed back whole.
+
+    `config` is passed through unvalidated on purpose: the tunables inside it
+    belong to the app, and a new key must not need a server release to reach
+    the fleet. The fields beside it are the envelope the device needs to tell
+    one revision from another -- `etag` is what a conditional refetch keys on.
+    """
+
+    config_id: str | None = None
+    schema_version: int | None = None
+    updated_at: str | None = None
+    etag: str | None = None
+    last_modified: str | None = None
+    config: dict[str, Any]
+
+
+# ============================================================
 # STATION MAPPING
 # ============================================================
 
 class Station(BaseModel):
+    """One forecourt as stored.
+
+    Extra keys are kept rather than dropped: the document is written by the
+    fleet as well as read by it, so a field this server has never heard of
+    must survive a round trip instead of being silently deleted.
+    """
+
     id: str
-    name: str
-    latitude: float
-    longitude: float
+    name: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+    # Operator, as the maps provider spells it.
+    brand: str | None = None
+
+    # Epoch milliseconds. Set by the server on every upsert, so it records
+    # when the row was written here, not when the device observed it.
+    modified_time: int | None = None
 
     # Top-to-bottom order of the rows on the price board, so the position in
     # this list is the row number. Never sort it: Räpina Olerex lists 98
-    # before 95. Empty when the sequence is not known for that station.
-    fuel_types: list[str]
+    # before 95. Empty or absent when the sequence is not known, which is the
+    # case for every station nobody has surveyed on foot.
+    fuel_types: list[str] | None = None
 
     note: str | None = None
+
+    model_config = {"extra": "allow"}
 
 
 class StationListResponse(BaseModel):
     version: int
     count: int
+
+    # Changes whenever the stored document does. Cache against it.
+    etag: str | None = None
+
     stations: list[Station]
+
+
+class StationUpsertRequest(BaseModel):
+    """The fields to write. Anything omitted keeps its stored value.
+
+    A partial write is the point: a device that has only a better position
+    must not blank out a surveyed `fuel_types` sequence it knows nothing
+    about. `id` comes from the path, not the body.
+    """
+
+    name: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    brand: str | None = None
+    fuel_types: list[str] | None = None
+    note: str | None = None
+
+
+class StationUpsertResponse(BaseModel):
+    # True when this call added the station rather than amending one.
+    created: bool
+
+    station: Station
+
+    # The document's etag after the write.
+    etag: str | None = None
+
+    count: int
+
+
+class StationDeleteResponse(BaseModel):
+    # Always true. A delete that removed nothing is a 404, not a false here.
+    deleted: bool
+
+    # The entry as it stood, so a caller can undo the delete by putting it
+    # back. Nothing else keeps a copy.
+    station: Station
+
+    # The document's etag after the write.
+    etag: str | None = None
+
+    count: int
+
+
+class EnrichedStationUpsertRequest(BaseModel):
+    latitude: float
+    longitude: float
+    name: str | None = None
+    fuel_types: list["EnrichedFuelType"]
+    deleted_row_nums: list[int] = Field(default_factory=list)
+
+
+class EnrichedFuelType(BaseModel):
+    row_num: int
+    fuel_type: str
+
+
+class EnrichedStationUpsertResponse(BaseModel):
+    created: bool
+    station: dict[str, Any]
+
+
+class EnrichedStationListResponse(BaseModel):
+    version: int
+    count: int
+    etag: str | None = None
+    stations: list[dict[str, Any]]

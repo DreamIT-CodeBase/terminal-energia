@@ -155,6 +155,13 @@ ARTIFACT_SAS_TTL_SECONDS="$(env_value ARTIFACT_SAS_TTL_SECONDS)"
 MODEL_SAS_TTL_SECONDS="$(env_value MODEL_SAS_TTL_SECONDS)"
 MODEL_CONTAINERS="$(env_value MODEL_CONTAINERS)"
 
+DEVICE_CONFIG_CONTAINER="$(env_value DEVICE_CONFIG_CONTAINER)"
+DEVICE_CONFIG_BLOB="$(env_value DEVICE_CONFIG_BLOB)"
+STATIONS_CONTAINER="$(env_value STATIONS_CONTAINER)"
+STATIONS_BLOB="$(env_value STATIONS_BLOB)"
+STATIONS_CACHE_TTL_SECONDS="$(env_value STATIONS_CACHE_TTL_SECONDS)"
+STATIONS_WRITE_ATTEMPTS="$(env_value STATIONS_WRITE_ATTEMPTS)"
+
 AZURE_TENANT_ID="$(env_value AZURE_TENANT_ID)"
 AZURE_CLIENT_ID="$(env_value AZURE_CLIENT_ID)"
 AZURE_CLIENT_SECRET="$(env_value AZURE_CLIENT_SECRET)"
@@ -251,6 +258,17 @@ IMAGE="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${TAG}"
 
 info "Image: ${IMAGE}"
 
+# When Bash is running under WSL but Azure CLI is installed on Windows, pass
+# Windows paths to `az acr build`; the Windows CLI cannot resolve `/mnt/...`.
+BUILD_CONTEXT="$SCRIPT_DIR"
+DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
+
+if command -v wslpath >/dev/null 2>&1 &&
+   [[ "$(command -v az)" == /mnt/* ]]; then
+  BUILD_CONTEXT="$(wslpath -w "$BUILD_CONTEXT")"
+  DOCKERFILE="$(wslpath -w "$DOCKERFILE")"
+fi
+
 # --no-logs: the CLI streams the remote build log through the console
 # encoding, which on Windows is cp1252 and cannot encode pip's output. It
 # raises UnicodeEncodeError and aborts the deploy even though the build
@@ -260,10 +278,10 @@ if ! az acr build \
   --registry "$ACR_NAME" \
   --image "${IMAGE_REPOSITORY}:${TAG}" \
   --image "${IMAGE_REPOSITORY}:latest" \
-  --file "${SCRIPT_DIR}/Dockerfile" \
+  --file "$DOCKERFILE" \
   --no-logs \
   --output none \
-  "$SCRIPT_DIR"; then
+  "$BUILD_CONTEXT"; then
 
   printf '\n'
   info "Build failed. Show the log with:"
@@ -438,6 +456,18 @@ if [ -n "$DEVICE_TOKEN_SECRET" ]; then
     "MODEL_CONTAINERS=${MODEL_CONTAINERS:-llm,yolo}"
   )
 fi
+
+# The device configuration document and the station list. Both are folders in
+# the shared configurations container, so they are plain settings, not secrets.
+FABRIC_ENV_ARGS+=(
+  "DEVICE_CONFIG_CONTAINER=${DEVICE_CONFIG_CONTAINER:-configurations}"
+  "DEVICE_CONFIG_BLOB=${DEVICE_CONFIG_BLOB:-device-config/device-config.default.json}"
+  "STATIONS_CONTAINER=${STATIONS_CONTAINER:-configurations}"
+  "STATIONS_BLOB=${STATIONS_BLOB:-stations-data/stations.json}"
+  "STATIONS_ENRICHED_BLOB=${STATIONS_ENRICHED_BLOB:-stations-data/stations-enriched.json}"
+  "STATIONS_CACHE_TTL_SECONDS=${STATIONS_CACHE_TTL_SECONDS:-60}"
+  "STATIONS_WRITE_ATTEMPTS=${STATIONS_WRITE_ATTEMPTS:-5}"
+)
 
 if [ -n "$AZURE_CLIENT_SECRET" ]; then
   SECRET_ARGS+=( "${SECRET_CLIENT_SECRET}=${AZURE_CLIENT_SECRET}" )

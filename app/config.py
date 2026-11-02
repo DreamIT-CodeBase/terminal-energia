@@ -33,6 +33,7 @@ ANNOTATED_CONTAINER = os.environ.get(
 #   video-id/crops/
 #   video-id/prepped/
 #   video-id/api_response.json
+#   video-id/updated_api_response.json
 #   video-id/video.mp4
 # ============================================================
 
@@ -44,6 +45,8 @@ IMAGE_FOLDERS = (
 
 
 API_RESPONSE_FILE = "api_response.json"
+
+UPDATED_API_RESPONSE_FILE = "updated_api_response.json"
 
 VIDEO_FILE = "video.mp4"
 
@@ -318,6 +321,79 @@ ARTIFACTS_CONTAINER = os.environ.get(
 
 
 RUN_MANIFEST_FILE = "run_manifest.json"
+
+
+# ============================================================
+# DEVICE CONFIGURATION
+#
+# The tunables the app used to ship as compiled-in constants
+# live in one JSON document in blob storage, so the fleet can
+# be re-tuned without a release. The device pulls it from
+# /v1/config; the blob is the single source of truth.
+#
+#   configurations/device-config/device-config.default.json
+#
+# `device-config/` is a folder inside the shared configurations
+# container, not a container of its own.
+# ============================================================
+
+DEVICE_CONFIG_CONTAINER = os.environ.get(
+    "DEVICE_CONFIG_CONTAINER",
+    "configurations",
+)
+
+
+DEVICE_CONFIG_BLOB = os.environ.get(
+    "DEVICE_CONFIG_BLOB",
+    "device-config/device-config.default.json",
+)
+
+
+# ============================================================
+# STATION MAPPING
+#
+# Held in blob storage rather than in the image, because the
+# fleet writes to it: a device that stops somewhere unmapped
+# upserts the forecourt it found.
+#
+#   configurations/stations-data/stations.json
+#
+# `stations-data/` is a folder inside the shared configurations
+# container, not a container of its own.
+# ============================================================
+
+STATIONS_CONTAINER = os.environ.get(
+    "STATIONS_CONTAINER",
+    "configurations",
+)
+
+
+STATIONS_BLOB = os.environ.get(
+    "STATIONS_BLOB",
+    "stations-data/stations.json",
+)
+
+
+STATIONS_ENRICHED_BLOB = os.environ.get(
+    "STATIONS_ENRICHED_BLOB",
+    "stations-data/stations-enriched.json",
+)
+
+
+# The document is small and read far more often than written, so it is held
+# in process for a short while. A write busts the cache immediately, so this
+# only bounds how stale a *different* worker can be.
+STATIONS_CACHE_TTL_SECONDS = int(
+    os.environ.get("STATIONS_CACHE_TTL_SECONDS", "60")
+)
+
+
+# An upsert is a read-modify-write of the whole document, so two devices
+# writing at once would lose one of them. The write is conditional on the
+# etag and retried on conflict; this bounds the retries.
+STATIONS_WRITE_ATTEMPTS = int(
+    os.environ.get("STATIONS_WRITE_ATTEMPTS", "5")
+)
 
 
 # One secret shared by the whole fleet. The device id that comes with it is a

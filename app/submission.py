@@ -1,8 +1,13 @@
 """Filing a finished video into the week it was annotated in.
 
 One submit closes out a whole video. Everything the labeller produced is in
-the request: which captured frames to keep, the board boxes drawn on each of
-them, and the price regions drawn inside each board box.
+the request: which frames to keep, the board boxes drawn on each of them, and
+the price regions drawn inside each board box.
+
+A frame may be one the pipeline extracted into `video-id/frames/` or one the
+labeller captured from the clip. Which it is only decides where its bytes are
+read from, which `read_frame` resolves; both end up in the same dataset, and
+the record notes where each came from.
 
 Crops are produced here rather than during labelling. The UI shows a board by
 displaying its frame clipped to the board box, so moving or resizing a board
@@ -24,7 +29,7 @@ from app.config import (
 
 from app.frames import (
     forget_video,
-    read_captured_frame,
+    read_frame,
 )
 
 from app.snapshots import (
@@ -115,13 +120,16 @@ def submit_video(
             # dataset. Not an error: capturing more than you use is normal.
             continue
 
-        result = read_captured_frame(video_id, frame.name)
+        # A frame is either one the pipeline extracted or one the labeller
+        # captured. The resolver reports which, and recording it keeps the
+        # provenance of every dataset image.
+        result = read_frame(video_id, frame.name)
 
         if result is None:
             skipped.append(frame.name)
             continue
 
-        frame_bytes, _ = result
+        frame_bytes, _, origin = result
 
         stored_frame = dataset_name(video_id, frame.name)
 
@@ -195,6 +203,7 @@ def submit_video(
             {
                 "name": frame.name,
                 "dataset_name": stored_frame,
+                "origin": origin,
                 "timestamp_ms": frame.timestamp_ms,
                 "width": frame.width,
                 "height": frame.height,

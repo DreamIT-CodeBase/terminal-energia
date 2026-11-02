@@ -1,5 +1,8 @@
+from typing import Any
+
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     HTTPException,
     Request,
@@ -11,6 +14,7 @@ from app.schemas import (
     VideoAssetsResponse,
     VideoListResponse,
     VideoSummary,
+    UpdatedApiResponseSaveResponse,
 )
 
 from app.security import require_api_key
@@ -25,6 +29,7 @@ from app.storage import (
     list_video_assets,
     list_videos as list_source_videos,
     read_api_response,
+    save_updated_api_response,
 )
 
 
@@ -113,6 +118,35 @@ def get_video(
 # ============================================================
 # API RESPONSE JSON
 # ============================================================
+
+@router.put(
+    "/{video_id}/updated-api-response",
+    response_model=UpdatedApiResponseSaveResponse,
+    summary="Save a corrected API response for one video",
+    description=(
+        "Stores the submitted JSON in the source container as "
+        "`video-id/updated_api_response.json`. Subsequent API-response reads "
+        "return this corrected document in preference to the original."
+    ),
+)
+def put_updated_api_response(
+    video_id: str,
+    updated_api_response: dict[str, Any] | list[Any] = Body(...),
+):
+
+    video_id = _validated_video_id(video_id)
+
+    blob_path = save_updated_api_response(
+        video_id=video_id,
+        response=updated_api_response,
+    )
+
+    return UpdatedApiResponseSaveResponse(
+        video_id=video_id,
+        blob_path=blob_path,
+        saved=True,
+    )
+
 
 @router.get(
     "/{video_id}/api-response",

@@ -18,6 +18,7 @@ from app.routers.devices import router as devices_router
 from app.routers.files import router as files_router
 from app.routers.files import health_router as fabric_health_router
 from app.routers.labelling import router as labelling_router
+from app.routers.stations import router as stations_router
 from app.routers.videos import router as videos_router
 
 
@@ -74,6 +75,11 @@ app.include_router(annotations_router)
 
 # Labelling: capture frames from the video, then submit the whole video once.
 app.include_router(labelling_router)
+
+# Station mapping for the labelling console: the same document the fleet
+# writes to under /v1/stations, reached with the service key instead of a
+# device token, so the fleet secret stays in the fleet.
+app.include_router(stations_router)
 
 # Device API: token auth plus brokered SAS for artifact upload and model
 # download, so the storage account key never ships in the APK. Deliberately

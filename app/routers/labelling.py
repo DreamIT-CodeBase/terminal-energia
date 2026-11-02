@@ -11,9 +11,10 @@ from fastapi.responses import Response
 from app.frames import (
     delete_captured_frame,
     extract_frames,
-    list_captured_frames,
+    is_captured,
+    list_frames,
     probe_video,
-    read_captured_frame,
+    read_frame,
 )
 
 from app.schemas import (
@@ -107,7 +108,12 @@ def get_probe(
 @router.get(
     "/{video_id}/frames",
     response_model=CapturedFramesResponse,
-    summary="Frames captured so far for one video",
+    summary="Every frame this video offers for labelling",
+    description=(
+        "What the pipeline extracted into video-id/frames/ first, then "
+        "whatever the labeller has captured from the clip on top of it. "
+        "Each entry says which of the two it is."
+    ),
 )
 def get_frames(
     video_id: str
@@ -117,7 +123,7 @@ def get_frames(
 
     return CapturedFramesResponse(
         video_id=video_id,
-        frames=list_captured_frames(video_id),
+        frames=list_frames(video_id),
     )
 
 
@@ -200,7 +206,7 @@ def get_frame_file(
     video_id = _validated_video_id(video_id)
     frame_name = _validated_frame_name(frame_name)
 
-    result = read_captured_frame(video_id, frame_name)
+    result = read_frame(video_id, frame_name)
 
     if result is None:
         raise HTTPException(
@@ -208,13 +214,13 @@ def get_frame_file(
             detail=f"Frame '{frame_name}' was not found.",
         )
 
-    data, content_type = result
+    data, content_type, _ = result
 
     return Response(
         content=data,
         media_type=content_type,
-        # A captured frame never changes: the same timestamp gives the same
-        # bytes, and re-capturing writes the same name.
+        # Neither kind of frame changes once it exists: a capture is named
+        # after its timestamp, and a pipeline frame is written once.
         headers={"Cache-Control": "private, max-age=3600"},
     )
 
@@ -223,6 +229,11 @@ def get_frame_file(
     "/{video_id}/frames/{frame_name}",
     response_model=CapturedFramesResponse,
     summary="Discard one captured frame",
+    description=(
+        "Only a capture can be discarded. Frames the pipeline extracted are "
+        "source data and are not this service's to delete; leaving one "
+        "unlabelled already keeps it out of the dataset."
+    ),
 )
 def delete_frame(
     video_id: str,
@@ -232,15 +243,21 @@ def delete_frame(
     video_id = _validated_video_id(video_id)
     frame_name = _validated_frame_name(frame_name)
 
-    if not delete_captured_frame(video_id, frame_name):
+    if not is_captured(video_id, frame_name):
+
         raise HTTPException(
             status_code=404,
-            detail=f"Frame '{frame_name}' was not found.",
+            detail=(
+                f"No captured frame '{frame_name}'. Frames extracted by the "
+                "pipeline cannot be discarded."
+            ),
         )
+
+    delete_captured_frame(video_id, frame_name)
 
     return CapturedFramesResponse(
         video_id=video_id,
-        frames=list_captured_frames(video_id),
+        frames=list_frames(video_id),
     )
 
 

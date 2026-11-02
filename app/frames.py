@@ -1,19 +1,22 @@
-"""Frames captured from a video, extracted server side at a timestamp.
+"""The frames a video offers for labelling, from either of two places.
 
-The labelling UI no longer works from whatever the pipeline happened to
-extract into `video-id/frames/`. The labeller scrubs the source `video.mp4`
-and picks the moments worth annotating, and each pick is decoded here with
-PyAV so the frame is exact and full quality rather than whatever a browser
-canvas happened to have on screen.
+What the pipeline already extracted into `video-id/frames/` is offered as it
+is. It is read only, and its names carry a frame index rather than a time.
 
-Captured frames are written straight into the working area, so a reload
+On top of that the labeller can scrub the source `video.mp4` and take any
+moment the pipeline missed. Each pick is decoded here with PyAV, so the frame
+is exact and full quality rather than whatever a browser canvas happened to
+have on screen, and it is written straight into the working area so a reload
 picks the session back up:
 
     _in_progress/video-id/frames/t00012340.png
     _in_progress/video-id/frames.json
 
-The file name carries the timestamp in milliseconds, which makes capturing
+A capture is named after its timestamp in milliseconds, which makes capturing
 the same moment twice idempotent instead of a duplicate.
+
+Callers ask for a frame by name and do not have to know which of the two it
+came from; `read_frame` resolves it.
 """
 
 import json
@@ -44,6 +47,8 @@ from app.snapshots import (
 
 from app.storage import (
     download_source_blob,
+    is_safe_blob_path,
+    list_video_assets,
     now_iso,
 )
 
@@ -301,7 +306,9 @@ def extract_frames(
         _merge_manifest(video_id, captured)
 
     return {
-        "frames": list_captured_frames(video_id),
+        # Everything on offer afterwards, pipeline frames included, so the
+        # caller never has to stitch two listings together.
+        "frames": list_frames(video_id),
         "captured": captured,
         "skipped": skipped,
         "error": None,
@@ -386,7 +393,7 @@ def _merge_manifest(
 def list_captured_frames(
     video_id: str
 ) -> list[dict]:
-    """Every frame captured for this video, oldest moment first."""
+    """Every frame captured from the clip, oldest moment first."""
 
     blobs = list_prefix_images(
         get_annotated_container(),
@@ -405,6 +412,7 @@ def list_captured_frames(
             {
                 "name": blob["name"],
                 "path": blob["path"],
+                "origin": "captured",
                 "timestamp_ms": entry.get("timestamp_ms")
                 or timestamp_of(blob["name"])
                 or 0,
@@ -417,6 +425,46 @@ def list_captured_frames(
     frames.sort(key=lambda frame: frame["timestamp_ms"])
 
     return frames
+
+
+def list_source_frames(
+    video_id: str
+) -> list[dict]:
+    """Frames the pipeline already extracted into video-id/frames/.
+
+    These are read only, and their names carry a frame index rather than a
+    time, so they have no timestamp. Sorting by name is still chronological:
+    the index counts up through the clip.
+    """
+
+    files = list_video_assets(video_id)["folders"].get("frames", [])
+
+    return [
+        {
+            "name": item["name"],
+            "path": item["path"],
+            "origin": "source",
+            "timestamp_ms": None,
+            # Neither is known without downloading the image; the canvas
+            # reports the real size once it has drawn the frame.
+            "width": 0,
+            "height": 0,
+            "size": item["size"],
+        }
+        for item in files
+    ]
+
+
+def list_frames(
+    video_id: str
+) -> list[dict]:
+    """Everything labellable for this video.
+
+    What the pipeline extracted comes first, since it is the set that was
+    already there, followed by whatever the labeller captured on top of it.
+    """
+
+    return list_source_frames(video_id) + list_captured_frames(video_id)
 
 
 # ============================================================
@@ -434,6 +482,62 @@ def read_captured_frame(
     return download_annotated_blob(
         f"{working_frames_prefix(video_id)}/{frame_name}"
     )
+
+
+def read_frame(
+    video_id: str,
+    frame_name: str,
+) -> tuple[bytes, str, str] | None:
+    """Bytes of one frame, wherever it lives, and which place that was.
+
+    The working area is checked first, so a capture always shadows a pipeline
+    frame that happens to share its name. Callers do not have to know or be
+    told which of the two they are asking for; the origin comes back with the
+    bytes, so establishing it costs no second round trip.
+    """
+
+    if "/" in frame_name or frame_name in ("", ".", ".."):
+        return None
+
+    captured = read_captured_frame(video_id, frame_name)
+
+    if captured is not None:
+        data, content_type = captured
+        return data, content_type, "captured"
+
+    path = f"{video_id}/frames/{frame_name}"
+
+    if not is_safe_blob_path(path):
+        return None
+
+    result = download_source_blob(path)
+
+    if result is None:
+        return None
+
+    data, content_type = result
+
+    return data, content_type, "source"
+
+
+def is_captured(
+    video_id: str,
+    frame_name: str,
+) -> bool:
+    """Whether this frame is a capture, and so ours to delete."""
+
+    if "/" in frame_name:
+        return False
+
+    blob = get_annotated_container().get_blob_client(
+        f"{working_frames_prefix(video_id)}/{frame_name}"
+    )
+
+    try:
+        return bool(blob.exists())
+
+    except ResourceNotFoundError:
+        return False
 
 
 def delete_captured_frame(
